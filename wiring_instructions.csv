@@ -1,0 +1,19 @@
+Room,Device Type,"Start (x,y)","End (x,y)",Wire Gauge,Length (ft)
+ROOM1,outlet,"609,307","486,636",12 AWG,456.0
+ROOM1,outlet,"290,575","486,636",12 AWG,261.0
+ROOM1,outlet,"913,575","486,636",12 AWG,492.0
+ROOM1,outlet,"437,1005","486,636",12 AWG,422.0
+ROOM1,switch,"913,843","486,636",12 AWG,638.0
+ROOM2,outlet,"1521,2766","1900,2766",12 AWG,383.0
+ROOM2,outlet,"1773,2497","1900,2766",12 AWG,400.0
+ROOM2,outlet,"2082,2766","1900,2766",12 AWG,186.0
+ROOM2,outlet,"1834,2997","1900,2766",12 AWG,301.0
+ROOM2,switch,"1679,2497","1900,2766",12 AWG,494.0
+ROOM3,outlet,"1859,1472","1693,1645",12 AWG,343.0
+ROOM3,outlet,"2082,1826","1693,1645",12 AWG,574.0
+ROOM3,outlet,"1773,1976","1693,1645",12 AWG,415.0
+ROOM3,outlet,"1521,1707","1693,1645",12 AWG,238.0
+ROOM3,switch,"1704,1976","1693,1645",12 AWG,346.0
+panel_connections,junction box,"1900,2766","290,2583",12 AWG,1797.0
+panel_connections,junction box,"1693,1645","290,2583",12 AWG,2345.0
+panel_connections,junction box,"486,636","290,2583",12 AWG,2147.0
