@@ -14,13 +14,11 @@ UNIT_PRICES = {
 }
 
 class WiringVisualizer(tk.Frame):
-    def __init__(self, master, symbols, graph, image_path):
+    def __init__(self, master,container):
         super().__init__(master)
         self.pack(fill="both", expand=True)
         self.master = master
-        self.symbols = symbols
-        self.graph = graph
-        self.image_path = image_path
+        self.container = container
 
         self.canvas_frame = tk.Frame(self)
         self.canvas_frame.pack(fill="both", expand=True)
@@ -38,10 +36,11 @@ class WiringVisualizer(tk.Frame):
         self.h_scroll.config(command=self.canvas.xview)
         self.v_scroll.config(command=self.canvas.yview)
 
-        self.image = Image.open(self.image_path)
+        self.image = Image.open(self.container['image_path'])
         self.img_tk = ImageTk.PhotoImage(self.image)
         self.canvas.create_image(0, 0, anchor="nw", image=self.img_tk)
 
+        #Routine
         self.draw_symbols()
         self.create_wiring()
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
@@ -49,27 +48,13 @@ class WiringVisualizer(tk.Frame):
         button_frame = tk.Frame(self)
         button_frame.pack(fill="x", pady=10)
 
-        tk.Button(button_frame, text="Export Manufacturing Instructions", command=self.export_instructions).pack(side="left", padx=10)
+        tk.Button(button_frame, text="Export Image", command=self.export_canvas_as_image).pack(side="left", padx=10)
         tk.Button(button_frame, text="Export BoM (LaTeX)", command=self.export_bom_latex).pack(side="left", padx=10)
         tk.Button(button_frame, text="Export Bill of Materials", command=self.export_bom).pack(side="left", padx=10)
 
-    def draw_grid(self):
-        x_coords = sorted(set(x for x, _ in self.graph.nodes()))
-        y_coords = sorted(set(y for _, y in self.graph.nodes()))
-
-        for x in x_coords:
-            self.canvas.create_line(x, min(y_coords), x, max(y_coords), fill="gray", dash=(2, 2))
-        for y in y_coords:
-            self.canvas.create_line(min(x_coords), y, max(x_coords), y, fill="gray", dash=(2, 2))
-
-        for node in self.graph.nodes():
-            x, y = node
-            color = "red" if self.graph.nodes[node].get("is_dot") else "blue"
-            self.canvas.create_oval(x-3, y-3, x+3, y+3, fill=color)
-
 
     def draw_symbols(self):
-        for s in self.symbols:
+        for s in self.container['symbols']:
             symbol_type = s.type
             match symbol_type:
                 case 'outlet':
@@ -104,13 +89,13 @@ class WiringVisualizer(tk.Frame):
 
     def generate_bom(self, scale_factor=0.05):
         bom = defaultdict(list)
-        for symbol in self.symbols:
+        for symbol in self.container['symbols']:
             if symbol.room and symbol.type not in ("junction box", "electrical panel"):
-                junction = next((s for s in self.symbols if s.type == "junction box" and s.room == symbol.room), None)
+                junction = next((s for s in self.container['symbols'] if s.type == "junction box" and s.room == symbol.room), None)
                 if not junction:
                     continue
                 try:
-                    path = nx.shortest_path(self.graph, source=symbol.coords, target=junction.coords)
+                    path = nx.shortest_path(self.container['graph'], source=symbol.coords, target=junction.coords)
                 except nx.NetworkXNoPath:
                     continue
                 total_length = sum(
@@ -132,49 +117,59 @@ class WiringVisualizer(tk.Frame):
 
         #Create dict with key as room and value as list of devices
         symbols_by_room = defaultdict(list)
-        for s in self.symbols:
+        for s in self.container['symbols']:
             if s.room and s.type != "electrical panel":
                 symbols_by_room[s.room].append(s)
 
         #Room by Room Wiring
         paths_by_room = {}
+        total_amp_by_room = {}
+
         for room, devices in symbols_by_room.items():
+
+            #If room has no junction box, skip it
             junctions = [s for s in devices if s.type == "junction box"]
             if not junctions:
                 print(f"⚠️ Room '{room}' has no junction box. Skipping...")
                 continue
+            
 
+            #Start Device to Junction Wiring for the current room
             junction = junctions[0]
             junction_node = (int(junction.coords[0]), int(junction.coords[1]))
             room_paths = []
+            total_amp = 0
 
             for device in devices:
                 if device is junction:
                     continue
                 device_node = (int(device.coords[0]), int(device.coords[1]))
                 try:
-                    path = nx.shortest_path(self.graph, source=device_node, target=junction_node)
-                    length = self.get_total_length(path,device.height,1)
-                    gauge = self.assign_wire_gauge(device.amperage,length)
-                    room_paths.append({device:[path,length, gauge]})
+                    path = nx.shortest_path(self.container['graph'], source=device_node, target=junction_node) # Get path
+                    total_amp+=device.amperage #Get room total amperage
+                    length = self.get_total_length(path,device.height,1) #Get total lenght of path
+                    gauge = self.assign_wire_gauge(device.amperage,length) #Get correct Gauge for the Path
+                    room_paths.append({device:[path,length, gauge]}) #Append results to the main dict
                 except nx.NetworkXNoPath:
                     print(f"❌ No path between {device_node} and junction in room '{room}'")
 
-            paths_by_room[room] = room_paths
+            paths_by_room[room] = room_paths #Get all paths
+            total_amp_by_room[room] = total_amp #Get all rooms amps
 
 
         #Home Run Wiring
-        panel_symbols = [s for s in self.symbols if s.type == "electrical panel"]
+        panel_symbols = [s for s in self.container['symbols'] if s.type == "electrical panel"]
         if panel_symbols:
             panel_node = (int(panel_symbols[0].coords[0]), int(panel_symbols[0].coords[1]))
             panel_paths = []
-            for s in self.symbols:
+            for s in self.container['symbols']:
                 if s.type == "junction box":
                     junction_node = (int(s.coords[0]), int(s.coords[1]))
                     try:
-                        path = nx.shortest_path(self.graph, source=junction_node, target=panel_node)
+                        path = nx.shortest_path(self.container['graph'], source=junction_node, target=panel_node)
+                        total_amp = total_amp_by_room[s.room]
                         length = self.get_total_length(path,panel_symbols[0].height,1)
-                        gauge = self.assign_wire_gauge(s.amperage,length)
+                        gauge = self.assign_wire_gauge(total_amp,length)
                         panel_paths.append({s:[path,length,gauge]})
                     except nx.NetworkXNoPath:
                         print(f"No path from junction at {junction_node} to panel")
@@ -209,117 +204,16 @@ class WiringVisualizer(tk.Frame):
         print(f"✅ Wiring paths drawn for rooms: {list(paths_by_room.keys())}")
 
         
-    def export_bom(self, filename="bill_of_materials.csv"):
-        bom = self.generate_bom(scale_factor=0.05)
-        with open(filename, mode='w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow(["Room", "Device Type", "Amperage", "Length (ft)", "Wire Gauge"])
-            for room, entries in bom.items():
-                for entry in entries:
-                    writer.writerow([
-                        room,
-                        entry["type"],
-                        entry["amperage"],
-                        entry["length_ft"],
-                        entry["wire_gauge"]
-                    ])
-        print(f"📦 BoM exported to {os.path.abspath(filename)}")
+    def export_canvas_as_image(self, filename="wiring_visualization.png"):
+        # Save canvas as .ps (PostScript)
+        ps_filename = "temp_export_canvas.ps"
+        self.canvas.postscript(file=ps_filename, colormode='color')
 
-    def export_instructions(self, filename="wiring_instructions.csv"):
-        with open(filename, mode='w', newline='') as file:
-            writer = csv.writer(file)
-            writer.writerow(["Room", "Device Type", "Start (x,y)", "End (x,y)", "Wire Gauge", "Length (ft)"])
-
-            for room, device_path_list in self.paths_by_room.items():
-                for device_path in device_path_list:
-                    for device, (path, length, gauge) in device_path.items():
-                        start = path[0]
-                        end = path[-1]
-                        writer.writerow([
-                            room,
-                            device.type,
-                            f"{start[0]},{start[1]}",
-                            f"{end[0]},{end[1]}",
-                            gauge,
-                            round(length, 2)
-                        ])
-        print(f"🛠️ Manufacturing instructions exported to {os.path.abspath(filename)}")
-    
-    def export_bom_latex(self, filename="bill_of_materials.tex"):
-        bom = self.generate_bom(scale_factor=0.05)
-        gauge_totals = defaultdict(float)
-        for entries in bom.values():
-            for item in entries:
-                gauge_totals[item["wire_gauge"]] += item["length_ft"]
-
-        # === Compute costs
-        table_rows = []
-        grand_total = 0.0
-        for gauge, length in gauge_totals.items():
-            unit_cost = UNIT_PRICES.get(gauge, 0.00)
-            total_cost = round(length * unit_cost, 2)
-            grand_total += total_cost
-            table_rows.append((gauge, round(length, 2), unit_cost, total_cost))
-
-        # === LaTeX document
-        lines = [
-            r"\documentclass{article}",
-            r"\usepackage{booktabs}",
-            r"\usepackage{graphicx}",
-            r"\usepackage{geometry}",
-            r"\geometry{margin=1in}",
-            r"\begin{document}",
-            r"\begin{center}",
-            r"\includegraphics[width=0.3\textwidth]{logo.png}\\[1em]",
-            r"{\LARGE \textbf{Bill of Materials Summary}}\\[0.5em]",
-            r"\end{center}",
-            r"\vspace{1.5em}",
-            r"\section*{Wire Gauge Cost Summary}",
-            r"\begin{tabular}{lllll}",
-            r"\toprule",
-            r"\textbf{BoM Level} & \textbf{Wire Gauge} & \textbf{Length (ft)} & \textbf{Unit Cost (\$)} & \textbf{Total Cost (\$)} \\",
-            r"\midrule"
-        ]
-
-
-        for row in table_rows:
-            gauge, length, unit_cost, total_cost = row
-            lines.append(f"1 & {gauge} & {length} & {unit_cost:.2f} & {total_cost:.2f} \\\\")
-
-        num_junctions = sum(1 for s in self.symbols if s.type == "junction box")
-        num_breakers = sum(1 for s in self.symbols if s.type == "junction box")  # or based on paths to panel
-
-        breaker_unit_cost = 5.00  # placeholder
-        junction_unit_cost = 3.00
-
-        breaker_total = num_breakers * breaker_unit_cost
-        junction_total = num_junctions * junction_unit_cost
-        grand_total += breaker_total + junction_total
-
-        # Add to LaTeX table
-        lines.extend([
-            r"\midrule",
-            f"0 & Breaker & {num_breakers} & {breaker_unit_cost:.2f} & {breaker_total:.2f} \\\\",
-            f"0 & Junction Box & {num_junctions} & {junction_unit_cost:.2f} & {junction_total:.2f} \\\\",
-        ])
-
-        lines.extend([
-            r"\bottomrule",
-            r"\end{tabular}",
-            "",
-            rf"\section*{{Total Cost: \${grand_total:.2f}}}",
-            r"\end{document}"
-        ])
-
-        with open(filename, "w") as f:
-            f.write("\n".join(lines))
-
-        print(f"📄 LaTeX BoM with costs exported to: {os.path.abspath(filename)}")
-
-        # Optional: Compile to PDF
-        import subprocess
+        # Convert to PNG using Pillow
         try:
-            subprocess.run(["pdflatex", filename], check=True)
-            print("✅ PDF compiled successfully.")
-        except Exception:
-            print("⚠️ Could not compile PDF. Is pdflatex installed?")
+            from PIL import Image
+            img = Image.open(ps_filename)
+            img.save(filename, "png")
+            print(f"🖼️ Canvas exported as image: {os.path.abspath(filename)}")
+        except Exception as e:
+            print("⚠️ Failed to export image:", e)

@@ -5,25 +5,34 @@ from symbol import Symbol
 import uuid
 
 class SymbolAnnotator(tk.Frame):
-    def __init__(self, master, on_done):
+    def __init__(self, master,container, on_done):
         super().__init__(master)
         self.pack(fill="both", expand=True)
+
+        #Initialize Passed Argument in the Class
         self.master = master
+        self.container = container
         self.on_done = on_done
 
-        # Ask for default amperage and height for each symbol type
-        self.symbol_types = ["outlet", "switch","junction box","electrical panel"]
-        self.symbol_defaults = {}
-        for symbol in self.symbol_types:
-            amperage = simpledialog.askstring("Input", f"Enter default amperage for {symbol}s:", parent=master)
-            height = simpledialog.askstring("Input", f"Enter default height for {symbol}s:", parent=master)
-            self.symbol_defaults[symbol] = {"amperage": amperage, "height": height}
+        
 
+        #Set up global variables in the container
+        self.container['ceiling_height'] = 96
+        self.container['default'] = {'outlet': {'amperage': 15, 'height': 16}, #All in inches
+                                      'switch': {'amperage': 15, 'height': 48},
+                                      'light': {'amperage': 1,'height':self.container["ceiling_height"]},
+                                      'junction box': {'amperage': None,'height':self.container["ceiling_height"]},
+                                      'electrical panel': {'amperage': None,'height': 70},
+                                      }
+        self.container["symbols"] = []
+        self.container["image_path"] = None
+
+        #Initialize current app variables
+        self.symbol_types = ["outlet", "switch","light","junction box","electrical panel"]
         self.current_symbol_idx = 0
-        self.annotations = []
-        self.image_path = None
         self.img_tk = None
 
+        #Initailize current app UI elements
         frame = tk.Frame(self)
         frame.pack(fill="x")
 
@@ -51,22 +60,25 @@ class SymbolAnnotator(tk.Frame):
         self.update_status()
 
     def load_image(self):
-        self.image_path = filedialog.askopenfilename()
-        if not self.image_path:
+        self.container["image_path"] = filedialog.askopenfilename()
+        if not self.container["image_path"]:
             return
-        img = Image.open(self.image_path)
+        img = Image.open(self.container["image_path"])
         self.img_tk = ImageTk.PhotoImage(img)
         self.canvas.create_image(0, 0, anchor="nw", image=self.img_tk)
         self.canvas.config(scrollregion=(0, 0, self.img_tk.width(), self.img_tk.height()))
+        scale = simpledialog.askfloat('Input',f'Input the DPI scale of the current image', parent = self.master)
+        self.container['scale'] = scale
+        
 
     def click_event(self, event):
         canvas_x = self.canvas.canvasx(event.x)
         canvas_y = self.canvas.canvasy(event.y)
         symbol_id = uuid.uuid1()
         symbol_type = self.symbol_types[self.current_symbol_idx]
-        default = self.symbol_defaults[symbol_type]
+        default = self.container['default'][symbol_type]
         symbol = Symbol(symbol_id,symbol_type, (canvas_x, canvas_y), room=None, amperage=default["amperage"], height=default["height"])
-        self.annotations.append(symbol)
+        self.container["symbols"].append(symbol)
         match symbol_type:
             case 'outlet':
                 self.canvas.create_oval(canvas_x-3, canvas_y-3, canvas_x+3, canvas_y+3, fill="red")
@@ -92,5 +104,6 @@ class SymbolAnnotator(tk.Frame):
         self.status_var.set(f"Select all {current}s where they meet the wall, then click 'Next'")
 
     def finish(self):
+        print(self.container)
         self.pack_forget() 
-        self.on_done(self.annotations, self.image_path)
+        self.on_done(self.container)

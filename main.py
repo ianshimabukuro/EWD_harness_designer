@@ -15,20 +15,20 @@ def main():
     container = {}  # Holds references to shared data between frames
 
     # === Step 3: WiringVisualizer ===
-    def start_wiring_visualizer(symbols, graph, image_path):
+    def start_wiring_visualizer(container):
         clear_window()
-        wiring_frame = WiringVisualizer(root, symbols, graph, image_path)
+        wiring_frame = WiringVisualizer(root,container)
         wiring_frame.pack(fill="both", expand=True)
 
     # === Step 2: RoomAnnotator ===
-    def start_room_annotator(annotations, image_path):
+    def start_room_annotator(container):
         clear_window()
-        room_frame = RoomAnnotator(root, annotations, image_path, on_done=start_wiring_visualizer)
+        room_frame = RoomAnnotator(root, container, on_done=start_wiring_visualizer)
         room_frame.pack(fill="both", expand=True)
 
     # === Step 1: SymbolAnnotator ===
     def start_symbol_annotator():
-        symbol_frame = SymbolAnnotator(root, start_room_annotator)
+        symbol_frame = SymbolAnnotator(root,container,on_done=start_room_annotator)
         symbol_frame.pack(fill="both", expand=True)
 
     # Helper to remove previous frame widgets

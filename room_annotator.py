@@ -6,11 +6,12 @@ from hanan_utils import annotations_to_hanan_grid
 
 
 class RoomAnnotator(tk.Frame):
-    def __init__(self, master, annotations, image_path, on_done):
+    def __init__(self, master,container, on_done):
         super().__init__(master)
         self.pack(fill="both", expand=True)
         self.master = master
         self.on_done = on_done  # for future callback
+        self.container = container
 
         self.canvas_frame = tk.Frame(self)
         self.canvas_frame.pack(fill="both", expand=True)
@@ -28,16 +29,15 @@ class RoomAnnotator(tk.Frame):
         self.h_scroll.config(command=self.canvas.xview)
         self.v_scroll.config(command=self.canvas.yview)
 
-        self.annotations = annotations
-        self.image_path = image_path
-        self.image = Image.open(image_path)
+        
+       
+       
+        self.image = Image.open(self.container['image_path'])
         self.img_tk = ImageTk.PhotoImage(self.image)
         self.canvas.create_image(0, 0, anchor="nw", image=self.img_tk)
 
-        self.G, self.x_coords, self.y_coords, annotations = annotations_to_hanan_grid(annotations, scale=1, threshold=10)
-        self.graph = self.G
-        self.symbols = annotations
-
+        self.container['graph'], self.x_coords, self.y_coords, self.container['symbols'] = annotations_to_hanan_grid(self.container['symbols'], scale=1, threshold=10)
+        
         self.room_polygons = []
         self.current_polygon = []
         self.dot_room_map = {}
@@ -63,24 +63,24 @@ class RoomAnnotator(tk.Frame):
         for y in self.y_coords:
             self.canvas.create_line(min(self.x_coords), y, max(self.x_coords), y, fill="gray", dash=(2, 2))
 
-        for node in self.G.nodes():
+        for node in self.container['graph'].nodes():
             x, y = node
-            color = "red" if self.G.nodes[node].get("is_dot") else "blue"
+            color = "red" if self.container['graph'].nodes[node].get("is_dot") else "blue"
 
-            is_panel = any(s.coords == (x, y) and s.type == "electrical panel" for s in self.symbols)
+            is_panel = any(s.coords == (x, y) and s.type == "electrical panel" for s in self.container['symbols'])
             if is_panel:
                 self.canvas.create_rectangle(x-5, y-5, x+5, y+5, fill="black", tags=f"dot_{x}_{y}")
             else:
                 self.canvas.create_oval(x-3, y-3, x+3, y+3, fill=color, tags=f"dot_{x}_{y}")
 
     def update_roomless_count(self):
-        roomless = sum(1 for s in self.symbols if s.room is None)
+        roomless = sum(1 for s in self.container['symbols'] if s.room is None)
         self.roomless_count_label.config(text=f"Symbols without room: {roomless}")
 
     def on_click(self, event):
         x = self.canvas.canvasx(event.x)
         y = self.canvas.canvasy(event.y)
-        closest = min(self.G.nodes(), key=lambda n: (n[0]-x)**2 + (n[1]-y)**2)
+        closest = min(self.container['graph'].nodes(), key=lambda n: (n[0]-x)**2 + (n[1]-y)**2)
         self.current_polygon.append(closest)
         self.draw_polygon_preview()
 
@@ -117,18 +117,18 @@ class RoomAnnotator(tk.Frame):
         self.update_roomless_count()
     def done(self):
         self.pack_forget() 
-        self.on_done(self.annotations,self.graph, self.image_path)
+        self.on_done(self.container)
 
     def assign_room_to_dots(self, polygon, room_name):
         poly_path = Path(polygon)
-        for node in self.G.nodes():
-            if self.G.nodes[node].get("is_dot"):
+        for node in self.container['graph'].nodes():
+            if self.container['graph'].nodes[node].get("is_dot"):
                 if poly_path.contains_point(node, radius=1e-6):
                     self.dot_room_map[node] = room_name
                     self.canvas.itemconfig(f"dot_{node[0]}_{node[1]}", fill="green")
                     self.canvas.create_text(node[0]+5, node[1]-5, text=room_name, fill="black", font=("Arial", 8))
 
-        for symbol in self.annotations:
+        for symbol in self.container['symbols']:
             mapped = (int(symbol.coords[0]), int(symbol.coords[1]))
             if symbol.type != "electrical panel" and mapped in self.dot_room_map and symbol.room is None:
                 symbol.room = self.dot_room_map[mapped]

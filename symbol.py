@@ -4,7 +4,7 @@ class Symbol:
         self.type = type
         self.coords = coords
         self.room = room
-        self.amperage = int(amperage)
+        self.amperage = amperage
         self.height = height
 
     def __str__(self):
