@@ -14,15 +14,17 @@ class SymbolAnnotator(tk.Frame):
         self.container = container
         self.on_done = on_done
 
+
+
         
 
         #Set up global variables in the container
-        self.container['ceiling_height'] = 96
-        self.container['default'] = {'outlet': {'amperage': 15, 'height': 16}, #All in inches
-                                      'switch': {'amperage': 15, 'height': 48},
+        self.container['ceiling_height'] = 8
+        self.container['default'] = {'outlet': {'amperage': 15, 'height': self.container["ceiling_height"] - 1}, #All in feet and Amps
+                                      'switch': {'amperage': 15, 'height': self.container["ceiling_height"] - 4},
                                       'light': {'amperage': 1,'height':self.container["ceiling_height"]},
                                       'junction box': {'amperage': None,'height':self.container["ceiling_height"]},
-                                      'electrical panel': {'amperage': None,'height': 70},
+                                      'electrical panel': {'amperage': None,'height': 6},
                                       }
         self.container["symbols"] = []
         self.container["image_path"] = None
@@ -56,6 +58,8 @@ class SymbolAnnotator(tk.Frame):
         h_scroll.config(command=self.canvas.xview)
         v_scroll.config(command=self.canvas.yview)
         self.canvas.bind("<Button-1>", self.click_event)
+        self.scale_points = []
+        self.canvas.bind("<Button-3>", self.set_scale_point)  # Right-click for scale selection
 
         self.update_status()
 
@@ -67,9 +71,7 @@ class SymbolAnnotator(tk.Frame):
         self.img_tk = ImageTk.PhotoImage(img)
         self.canvas.create_image(0, 0, anchor="nw", image=self.img_tk)
         self.canvas.config(scrollregion=(0, 0, self.img_tk.width(), self.img_tk.height()))
-        scale = simpledialog.askfloat('Input',f'Input the DPI scale of the current image', parent = self.master)
-        self.container['scale'] = scale
-        
+
 
     def click_event(self, event):
         canvas_x = self.canvas.canvasx(event.x)
@@ -91,7 +93,30 @@ class SymbolAnnotator(tk.Frame):
             case _:
                 self.canvas.create_oval(canvas_x-3, canvas_y-3, canvas_x+3, canvas_y+3, fill="red")
 
+    def set_scale_point(self, event):
+        canvas_x = self.canvas.canvasx(event.x)
+        canvas_y = self.canvas.canvasy(event.y)
+        self.scale_points.append((canvas_x, canvas_y))
+        self.canvas.create_oval(canvas_x-3, canvas_y-3, canvas_x+3, canvas_y+3, outline="blue", width=2)
 
+        if len(self.scale_points) == 2:
+            # Calculate pixel distance
+            x1, y1 = self.scale_points[0]
+            x2, y2 = self.scale_points[1]
+            pixel_distance = ((x2 - x1)**2 + (y2 - y1)**2)**0.5
+
+            # Ask for real-world distance
+            real_distance = simpledialog.askfloat("Input", "Enter the real-world distance between these two points (in ft):", parent=self.master)
+            if real_distance and pixel_distance > 0:
+                scale = real_distance / pixel_distance
+                self.container['scale'] = scale
+                print(f"📐 Scale set: {scale:.4f} real-world units per pixel")
+            else:
+                print("⚠️ Invalid distance input or points too close.")
+
+            # Clear scale points for next time
+            self.scale_points.clear()
+    
     def next_symbol(self):
         if self.current_symbol_idx + 1 < len(self.symbol_types):
             self.current_symbol_idx += 1

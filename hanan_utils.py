@@ -39,14 +39,13 @@ def create_axis_mapping(clusters):
             mapping[v] = canonical
     return mapping
 
-def annotations_to_hanan_grid(symbols, scale=1, threshold=10):
+def annotations_to_hanan_grid(symbols,scale, threshold=10):
     """
     Converts a list of Symbol objects into a Hanan grid graph, clustering coordinates,
     and updates each symbol's coords to the snapped grid-aligned position.
 
     Args:
         symbols (List[Symbol]): List of Symbol objects with raw .coords
-        scale (float): optional coordinate scale factor
         threshold (float): clustering threshold for aligning close points
 
     Returns:
@@ -55,18 +54,20 @@ def annotations_to_hanan_grid(symbols, scale=1, threshold=10):
         y_coords ([int]): Unique snapped y coordinates
         symbols (List[Symbol]): The same list, with updated .coords
     """
+
+    norm_thresh = threshold*scale
     # Step 1: Collect original coordinates
-    raw_coords = [(int(s.coords[0] * scale), int(s.coords[1] * scale)) for s in symbols]
+    raw_coords = [(int(s.coords[0] ), int(s.coords[1] )) for s in symbols]
 
     # Step 2: Cluster axes
     raw_x = sorted(set(x for x, _ in raw_coords))
     raw_y = sorted(set(y for _, y in raw_coords))
-    x_map = create_axis_mapping(cluster_axis(raw_x, threshold))
-    y_map = create_axis_mapping(cluster_axis(raw_y, threshold))
+    x_map = create_axis_mapping(cluster_axis(raw_x, norm_thresh))
+    y_map = create_axis_mapping(cluster_axis(raw_y, norm_thresh))
 
     # Step 3: Update symbol coordinates in-place
     for s in symbols:
-        x_raw, y_raw = int(s.coords[0] * scale), int(s.coords[1] * scale)
+        x_raw, y_raw = int(s.coords[0] ), int(s.coords[1])
         s.coords = (x_map[x_raw], y_map[y_raw])
 
     # Step 4: Extract snapped coordinates for graph

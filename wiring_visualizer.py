@@ -6,10 +6,10 @@ import csv
 import os
 
 UNIT_PRICES = {
-    "14 AWG": 0.12,
-    "12 AWG": 0.18,
-    "10 AWG": 0.25,
-    "8 AWG": 0.35,
+    "14 AWG": 0.5,
+    "12 AWG": 0.6,
+    "10 AWG": 0.8,
+    "8 AWG": 1,
     "Consult engineer": 0.00  # default fallback
 }
 
@@ -49,8 +49,8 @@ class WiringVisualizer(tk.Frame):
         button_frame.pack(fill="x", pady=10)
 
         tk.Button(button_frame, text="Export Image", command=self.export_canvas_as_image).pack(side="left", padx=10)
-        tk.Button(button_frame, text="Export BoM (LaTeX)", command=self.export_bom_latex).pack(side="left", padx=10)
-        tk.Button(button_frame, text="Export Bill of Materials", command=self.export_bom).pack(side="left", padx=10)
+        tk.Button(button_frame, text="Export BOM", command=self.export_bom_latex).pack(side="left", padx=10)
+        #tk.Button(button_frame, text="Export Manufacturing Instructions", command=self.export_bom).pack(side="left", padx=10)
 
 
     def draw_symbols(self):
@@ -85,32 +85,6 @@ class WiringVisualizer(tk.Frame):
                 ) * scale
         
         return total_length+float(height)
-
-
-    def generate_bom(self, scale_factor=0.05):
-        bom = defaultdict(list)
-        for symbol in self.container['symbols']:
-            if symbol.room and symbol.type not in ("junction box", "electrical panel"):
-                junction = next((s for s in self.container['symbols'] if s.type == "junction box" and s.room == symbol.room), None)
-                if not junction:
-                    continue
-                try:
-                    path = nx.shortest_path(self.container['graph'], source=symbol.coords, target=junction.coords)
-                except nx.NetworkXNoPath:
-                    continue
-                total_length = sum(
-                    ((path[i+1][0]-path[i][0])**2 + (path[i+1][1]-path[i][1])**2)**0.5
-                    for i in range(len(path)-1)
-                ) * scale_factor
-                gauge = self.assign_wire_gauge(float(symbol.amperage), total_length)
-                bom[symbol.room].append({
-                    "type": symbol.type,
-                    "amperage": symbol.amperage,
-                    "length_ft": round(total_length, 2),
-                    "wire_gauge": gauge
-                })
-        return bom
-
 
     def create_wiring(self):
 
@@ -147,7 +121,7 @@ class WiringVisualizer(tk.Frame):
                 try:
                     path = nx.shortest_path(self.container['graph'], source=device_node, target=junction_node) # Get path
                     total_amp+=device.amperage #Get room total amperage
-                    length = self.get_total_length(path,device.height,1) #Get total lenght of path
+                    length = self.get_total_length(path,device.height,self.container['scale']) #Get total lenght of path
                     gauge = self.assign_wire_gauge(device.amperage,length) #Get correct Gauge for the Path
                     room_paths.append({device:[path,length, gauge]}) #Append results to the main dict
                 except nx.NetworkXNoPath:
@@ -168,8 +142,8 @@ class WiringVisualizer(tk.Frame):
                     try:
                         path = nx.shortest_path(self.container['graph'], source=junction_node, target=panel_node)
                         total_amp = total_amp_by_room[s.room]
-                        length = self.get_total_length(path,panel_symbols[0].height,1)
-                        gauge = self.assign_wire_gauge(total_amp,length)
+                        length = self.get_total_length(path,panel_symbols[0].height,self.container['scale'])
+                        gauge = self.assign_wire_gauge(total_amp/10,length)
                         panel_paths.append({s:[path,length,gauge]})
                     except nx.NetworkXNoPath:
                         print(f"No path from junction at {junction_node} to panel")
@@ -217,3 +191,88 @@ class WiringVisualizer(tk.Frame):
             print(f"🖼️ Canvas exported as image: {os.path.abspath(filename)}")
         except Exception as e:
             print("⚠️ Failed to export image:", e)
+    def export_bom_latex(self, filename="bill_of_materials.tex"):
+        from collections import defaultdict
+
+        wire_totals = defaultdict(float)
+        breaker_count = 0
+        junction_box_counts = 0
+
+        # === Count wire lengths and connections
+        for room, device_path_list in self.paths_by_room.items():
+            for device_path in device_path_list:
+                for device, (path, length, gauge) in device_path.items():
+                    wire_totals[gauge] += length
+                    if device.type == "junction box":
+                        junction_box_counts += 1
+            if room != "panel_connections":
+                breaker_count += 1
+
+        # === Estimate junction box pricing by # of connections
+
+        # === Prepare table rows
+        table_rows = []
+        grand_total = 0.0
+
+        # Wires
+        for gauge, total_len in wire_totals.items():
+            unit_price = UNIT_PRICES.get(gauge, 0.00)
+            cost = round(total_len * unit_price, 2)
+            grand_total += cost
+            table_rows.append((1, f"{gauge} wire", round(total_len, 2), unit_price, cost))
+
+        # Junction Boxes
+        jb_unit_cost = 5.00
+        jb_total = junction_box_counts*jb_unit_cost
+        grand_total +=jb_total
+        table_rows.append((0, "Junction Box", junction_box_counts, jb_unit_cost, jb_total))
+
+        # Breakers
+        breaker_unit_cost = 8.00
+        breaker_total = breaker_count * breaker_unit_cost
+        grand_total += breaker_total
+        table_rows.append((0, "Breaker", breaker_count, breaker_unit_cost, breaker_total))
+
+        # === Create LaTeX content
+        lines = [
+            r"\documentclass{article}",
+            r"\usepackage{booktabs}",
+            r"\usepackage{graphicx}",
+            r"\usepackage{geometry}",
+            r"\geometry{margin=1in}",
+            r"\begin{document}",
+            r"\begin{center}",
+            r"\includegraphics[width=0.3\textwidth]{logo.png}\\[1em]",
+            r"{\LARGE \textbf{Bill of Materials Summary}}\\[0.5em]",
+            r"\end{center}",
+            r"\vspace{1.5em}",
+            r"\section*{Component Summary}",
+            r"\begin{tabular}{lllll}",
+            r"\toprule",
+            r"\textbf{BoM Level} & \textbf{Material} & \textbf{Quantity} & \textbf{Unit Cost (\$)} & \textbf{Total Cost (\$)} \\",
+            r"\midrule"
+        ]
+
+        for level, name, qty, unit, total in table_rows:
+            lines.append(f"{level} & {name} & {qty} & {unit:.2f} & {total:.2f} \\\\")
+
+        lines.extend([
+            r"\bottomrule",
+            r"\end{tabular}",
+            "",
+            rf"\section*{{Total Cost: \${grand_total:.2f}}}",
+            r"\end{document}"
+        ])
+
+        with open(filename, "w") as f:
+            f.write("\n".join(lines))
+
+        print(f"📄 LaTeX BoM with costs exported to: {os.path.abspath(filename)}")
+
+        # === Optionally compile to PDF
+        import subprocess
+        try:
+            subprocess.run(["pdflatex", filename], check=True)
+            print("✅ PDF compiled successfully.")
+        except Exception:
+            print("⚠️ Could not compile PDF. Is pdflatex installed?")
