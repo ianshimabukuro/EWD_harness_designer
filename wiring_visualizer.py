@@ -15,6 +15,7 @@ UNIT_PRICES = {
 
 class WiringVisualizer(tk.Frame):
     def __init__(self, master,container):
+
         super().__init__(master)
         self.pack(fill="both", expand=True)
         self.master = master
@@ -45,9 +46,9 @@ class WiringVisualizer(tk.Frame):
         self.create_wiring()
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
 
+        #Export Buttons
         button_frame = tk.Frame(self)
         button_frame.pack(fill="x", pady=10)
-
         tk.Button(button_frame, text="Export Image", command=self.export_canvas_as_image).pack(side="left", padx=10)
         tk.Button(button_frame, text="Export BOM", command=self.export_bom_latex).pack(side="left", padx=10)
         #tk.Button(button_frame, text="Export Manufacturing Instructions", command=self.export_bom).pack(side="left", padx=10)
@@ -85,6 +86,59 @@ class WiringVisualizer(tk.Frame):
                 ) * scale
         
         return total_length+float(height)
+
+    def calculate_cost(self):
+
+        wire_totals = defaultdict(float)
+        breaker_count = 0
+        junction_box_counts = 0
+
+        # === Count wire lengths and connections
+        for room, device_path_list in self.paths_by_room.items():
+            for device_path in device_path_list:
+                for device, (path, length, gauge) in device_path.items():
+                    wire_totals[gauge] += length
+                    if device.type == "junction box":
+                        junction_box_counts += 1
+            if room != "panel_connections":
+                breaker_count += 1
+
+
+        # === Estimate junction box pricing by # of connections
+
+        # === Prepare table rows
+        table_rows = []
+        grand_total = 0.0
+
+        # Wires
+        for gauge, total_len in wire_totals.items():
+            unit_price = UNIT_PRICES.get(gauge, 0.00)
+            cost = round(total_len * unit_price, 2)
+            grand_total += cost
+            table_rows.append((1, f"{gauge} wire", round(total_len, 2), unit_price, cost))
+
+        # Junction Boxes
+        jb_unit_cost = 5.00
+        jb_total = junction_box_counts*jb_unit_cost
+        grand_total +=jb_total
+        table_rows.append((0, "Junction Box", junction_box_counts, jb_unit_cost, jb_total))
+
+        # Breakers
+        breaker_unit_cost = 65.00
+        breaker_total = breaker_count * breaker_unit_cost
+        grand_total += breaker_total
+        table_rows.append((0, "20A Breaker GFCI/AFCI", breaker_count, breaker_unit_cost, breaker_total))
+
+        #Panel
+        if self.panel_max_amp <= 150:
+            panel_cost = 100
+            table_rows.append((0, "100-150A Electrical Panel", 1, panel_cost, panel_cost))
+        else:
+            panel_cost = 200
+            table_rows.append((0, "200A Electrical Panel", 1, panel_cost, panel_cost))
+        grand_total += panel_cost
+
+        return grand_total, table_rows
 
     def create_wiring(self):
 
@@ -128,7 +182,7 @@ class WiringVisualizer(tk.Frame):
                     print(f"❌ No path between {device_node} and junction in room '{room}'")
 
             paths_by_room[room] = room_paths #Get all paths
-            total_amp_by_room[room] = total_amp #Get all rooms amps
+            total_amp_by_room[room] = min(total_amp*0.3, 20) #Get all rooms amps
 
 
         #Home Run Wiring
@@ -143,7 +197,7 @@ class WiringVisualizer(tk.Frame):
                         path = nx.shortest_path(self.container['graph'], source=junction_node, target=panel_node)
                         total_amp = total_amp_by_room[s.room]
                         length = self.get_total_length(path,panel_symbols[0].height,self.container['scale'])
-                        gauge = self.assign_wire_gauge(total_amp/10,length)
+                        gauge = self.assign_wire_gauge(total_amp,length)
                         panel_paths.append({s:[path,length,gauge]})
                     except nx.NetworkXNoPath:
                         print(f"No path from junction at {junction_node} to panel")
@@ -152,6 +206,7 @@ class WiringVisualizer(tk.Frame):
             print(" No electrical panel found. Skipping panel connections.")
         print(paths_by_room)
         self.paths_by_room = paths_by_room
+        self.panel_max_amp = sum(total_amp_by_room.values())
         self.draw_paths(paths_by_room)
 
     def draw_paths(self, paths_by_room):
@@ -191,48 +246,10 @@ class WiringVisualizer(tk.Frame):
             print(f"🖼️ Canvas exported as image: {os.path.abspath(filename)}")
         except Exception as e:
             print("⚠️ Failed to export image:", e)
+
     def export_bom_latex(self, filename="bill_of_materials.tex"):
-        from collections import defaultdict
-
-        wire_totals = defaultdict(float)
-        breaker_count = 0
-        junction_box_counts = 0
-
-        # === Count wire lengths and connections
-        for room, device_path_list in self.paths_by_room.items():
-            for device_path in device_path_list:
-                for device, (path, length, gauge) in device_path.items():
-                    wire_totals[gauge] += length
-                    if device.type == "junction box":
-                        junction_box_counts += 1
-            if room != "panel_connections":
-                breaker_count += 1
-
-        # === Estimate junction box pricing by # of connections
-
-        # === Prepare table rows
-        table_rows = []
-        grand_total = 0.0
-
-        # Wires
-        for gauge, total_len in wire_totals.items():
-            unit_price = UNIT_PRICES.get(gauge, 0.00)
-            cost = round(total_len * unit_price, 2)
-            grand_total += cost
-            table_rows.append((1, f"{gauge} wire", round(total_len, 2), unit_price, cost))
-
-        # Junction Boxes
-        jb_unit_cost = 5.00
-        jb_total = junction_box_counts*jb_unit_cost
-        grand_total +=jb_total
-        table_rows.append((0, "Junction Box", junction_box_counts, jb_unit_cost, jb_total))
-
-        # Breakers
-        breaker_unit_cost = 8.00
-        breaker_total = breaker_count * breaker_unit_cost
-        grand_total += breaker_total
-        table_rows.append((0, "Breaker", breaker_count, breaker_unit_cost, breaker_total))
-
+        
+        grand_total, table_rows = self.calculate_cost()
         # === Create LaTeX content
         lines = [
             r"\documentclass{article}",
@@ -266,13 +283,5 @@ class WiringVisualizer(tk.Frame):
 
         with open(filename, "w") as f:
             f.write("\n".join(lines))
+        print(f"LaTeX BoM with costs exported to: {os.path.abspath(filename)}")
 
-        print(f"📄 LaTeX BoM with costs exported to: {os.path.abspath(filename)}")
-
-        # === Optionally compile to PDF
-        import subprocess
-        try:
-            subprocess.run(["pdflatex", filename], check=True)
-            print("✅ PDF compiled successfully.")
-        except Exception:
-            print("⚠️ Could not compile PDF. Is pdflatex installed?")
