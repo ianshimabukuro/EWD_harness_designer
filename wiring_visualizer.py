@@ -1,5 +1,5 @@
 import tkinter as tk
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageGrab
 import networkx as nx
 from collections import defaultdict
 import csv
@@ -234,18 +234,40 @@ class WiringVisualizer(tk.Frame):
 
         
     def export_canvas_as_image(self, filename="wiring_visualization.png"):
-        # Save canvas as .ps (PostScript)
-        ps_filename = "temp_export_canvas.ps"
-        self.canvas.postscript(file=ps_filename, colormode='color')
+        from PIL import Image, EpsImagePlugin
+        import os
 
-        # Convert to PNG using Pillow
+        # Specify Ghostscript executable path (update this if needed)
+        EpsImagePlugin.gs_windows_binary = r"C:\Program Files\gs\gs10.05.0\bin\gswin64c.exe"
+
+        # Get full drawing area (bounding box of everything on the canvas)
+        self.canvas.update()
+        bbox = self.canvas.bbox("all")  # (x1, y1, x2, y2)
+
+        if bbox is None:
+            print("⚠️ Nothing to export: Canvas is empty.")
+            return
+
+        x1, y1, x2, y2 = bbox
+        width = x2 - x1
+        height = y2 - y1
+
+        # Save canvas as PostScript file, using full bbox
+        ps_filename = "temp_export_canvas.ps"
+        self.canvas.postscript(file=ps_filename, colormode='color',
+                            x=x1, y=y1, width=width, height=height, pagewidth=width, pageheight=height)
+
+        # Convert .ps to PNG
         try:
-            from PIL import Image
             img = Image.open(ps_filename)
-            img.save(filename, "png")
-            print(f"🖼️ Canvas exported as image: {os.path.abspath(filename)}")
+            img.load()  # Force loading
+            img.save(filename, "PNG")
+            print(f"🖼️ Full canvas exported to: {os.path.abspath(filename)}")
         except Exception as e:
             print("⚠️ Failed to export image:", e)
+        finally:
+            if os.path.exists(ps_filename):
+                os.remove(ps_filename)
 
     def export_bom_latex(self, filename="bill_of_materials.tex"):
         
