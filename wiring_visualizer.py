@@ -51,7 +51,7 @@ class WiringVisualizer(tk.Frame):
         button_frame.pack(fill="x", pady=10)
         tk.Button(button_frame, text="Export Image", command=self.export_canvas_as_image).pack(side="left", padx=10)
         tk.Button(button_frame, text="Export BOM", command=self.export_bom_latex).pack(side="left", padx=10)
-        #tk.Button(button_frame, text="Export Manufacturing Instructions", command=self.export_bom).pack(side="left", padx=10)
+        tk.Button(button_frame, text="Export Manufacturing Instructions", command=self.export_manufacturing_instructions_latex).pack(side="left", padx=10)
 
 
     def draw_symbols(self):
@@ -306,4 +306,82 @@ class WiringVisualizer(tk.Frame):
         with open(filename, "w") as f:
             f.write("\n".join(lines))
         print(f"LaTeX BoM with costs exported to: {os.path.abspath(filename)}")
+
+    def export_manufacturing_instructions_latex(self, filename="manufacturing_instructions.tex"):
+        from collections import defaultdict
+        import re
+
+        def latex_escape(text):
+            return re.sub(r'_', r'\_', str(text))
+
+        lines = [
+            r"\documentclass{article}",
+            r"\usepackage{geometry}",
+            r"\usepackage{enumitem}",
+            r"\usepackage{titlesec}",
+            r"\geometry{margin=1in}",
+            r"\titleformat{\section}{\normalfont\Large\bfseries}{\thesection}{1em}{}",
+            r"\begin{document}",
+            r"\begin{center}",
+            r"\LARGE \textbf{Wiring Harness Manufacturing Instructions}",
+            r"\end{center}",
+            r"\vspace{1em}"
+        ]
+
+        wire_id_counter = defaultdict(int)
+
+        # === Room Assemblies ===
+        for room, device_path_list in self.paths_by_room.items():
+            if room == "panel_connections":
+                continue
+            lines.append(fr"\section*{{Room: {latex_escape(room)}}}")
+            lines.append(r"\begin{enumerate}[leftmargin=*]")
+
+            for device_path in device_path_list:
+                for device, (path, length, gauge) in device_path.items():
+                    wire_id_counter[room] += 1
+                    wire_label = latex_escape(f"{room}_wire_{wire_id_counter[room]}")
+                    start = tuple(map(int, path[0]))
+                    end = tuple(map(int, path[-1]))
+                    symbol_type = device.type
+
+                    lines.append(
+                        fr"\item Cut \textbf{{{round(length, 2)}}} ft of \textbf{{{gauge}}} wire labeled \textbf{{{wire_label}}}.\\"
+                        fr"Connect from \texttt{{{start}}} ({symbol_type}) to junction box at \texttt{{{end}}}."
+                    )
+
+            lines.append(r"\end{enumerate}")
+
+        # === Home Run Wiring ===
+        if "panel_connections" in self.paths_by_room:
+            lines.append(r"\section*{Home Run Wiring}")
+            lines.append(r"\begin{enumerate}[leftmargin=*]")
+            home_run_id = 1
+            for device_path in self.paths_by_room["panel_connections"]:
+                for junction, (path, length, gauge) in device_path.items():
+                    label = f"home_run_{home_run_id}"
+                    start = tuple(map(int, path[0]))
+                    end = tuple(map(int, path[-1]))
+                    lines.append(
+                        fr"\item Cut \textbf{{{round(length, 2)}}} ft of \textbf{{{gauge}}} wire labeled \textbf{{{latex_escape(label)}}}.\\"
+                        fr"Connect from junction box at \texttt{{{start}}} to electrical panel at \texttt{{{end}}}."
+                    )
+                    home_run_id += 1
+            lines.append(r"\end{enumerate}")
+
+        # === Panel Assembly ===
+        lines.append(r"\section*{Electrical Panel Assembly}")
+        lines.append(r"\begin{enumerate}[leftmargin=*]")
+        for i in range(1, home_run_id):
+            lines.append(
+                fr"\item Connect \textbf{{home\_run\_{i}}} to breaker slot \#{i}. Use 20A GFCI/AFCI breaker."
+            )
+        lines.append(r"\end{enumerate}")
+
+        lines.append(r"\end{document}")
+
+        with open(filename, "w") as f:
+            f.write("\n".join(lines))
+
+        print(f"LaTeX manufacturing instructions exported to: {os.path.abspath(filename)}")
 
