@@ -339,15 +339,14 @@ class WiringVisualizer(tk.Frame):
 
             for device_path in device_path_list:
                 for device, (path, length, gauge) in device_path.items():
+                    
                     wire_id_counter[room] += 1
                     wire_label = latex_escape(f"{room}_wire_{wire_id_counter[room]}")
-                    start = tuple(map(int, path[0]))
-                    end = tuple(map(int, path[-1]))
                     symbol_type = device.type
 
                     lines.append(
                         fr"\item Cut \textbf{{{round(length, 2)}}} ft of \textbf{{{gauge}}} wire labeled \textbf{{{wire_label}}}.\\"
-                        fr"Connect from \texttt{{{start}}} ({symbol_type}) to junction box at \texttt{{{end}}}."
+                        fr"Connect from \texttt ({symbol_type} with id {device.id}) to {room} junction box ."
                     )
 
             lines.append(r"\end{enumerate}")
@@ -364,7 +363,7 @@ class WiringVisualizer(tk.Frame):
                     end = tuple(map(int, path[-1]))
                     lines.append(
                         fr"\item Cut \textbf{{{round(length, 2)}}} ft of \textbf{{{gauge}}} wire labeled \textbf{{{latex_escape(label)}}}.\\"
-                        fr"Connect from junction box at \texttt{{{start}}} to electrical panel at \texttt{{{end}}}."
+                        fr"Connect from junction box at {junction.room} to Electrical Panel."
                     )
                     home_run_id += 1
             lines.append(r"\end{enumerate}")
