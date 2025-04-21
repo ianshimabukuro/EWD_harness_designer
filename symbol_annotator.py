@@ -2,7 +2,6 @@ import tkinter as tk
 from tkinter import filedialog, simpledialog
 from PIL import Image, ImageTk
 from symbol import Symbol
-import uuid
 
 class SymbolAnnotator(tk.Frame):
     def __init__(self, master,container, on_done):
@@ -14,9 +13,6 @@ class SymbolAnnotator(tk.Frame):
         self.container = container
         self.on_done = on_done
 
-
-
-        
 
         #Set up global variables in the container
         self.container['ceiling_height'] = 8
@@ -76,10 +72,10 @@ class SymbolAnnotator(tk.Frame):
     def click_event(self, event):
         canvas_x = self.canvas.canvasx(event.x)
         canvas_y = self.canvas.canvasy(event.y)
-        symbol_id = uuid.uuid1()
+    
         symbol_type = self.symbol_types[self.current_symbol_idx]
         default = self.container['default'][symbol_type]
-        symbol = Symbol(symbol_id,symbol_type, (canvas_x, canvas_y), room=None, amperage=default["amperage"], height=default["height"])
+        symbol = Symbol(symbol_type, (canvas_x, canvas_y), room=None, amperage=default["amperage"], height=default["height"])
         self.container["symbols"].append(symbol)
         match symbol_type:
             case 'outlet':

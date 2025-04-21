@@ -2,6 +2,8 @@ import tkinter as tk
 from PIL import Image, ImageTk, ImageGrab
 import networkx as nx
 from collections import defaultdict
+from wire import Wire
+import re
 import csv
 import os
 
@@ -49,8 +51,8 @@ class WiringVisualizer(tk.Frame):
         #Export Buttons
         button_frame = tk.Frame(self)
         button_frame.pack(fill="x", pady=10)
-        tk.Button(button_frame, text="Export Image", command=self.export_canvas_as_image).pack(side="left", padx=10)
-        tk.Button(button_frame, text="Export BOM", command=self.export_bom_latex).pack(side="left", padx=10)
+        #tk.Button(button_frame, text="Export Image", command=self.export_canvas_as_image).pack(side="left", padx=10)
+        #tk.Button(button_frame, text="Export BOM", command=self.export_bom_latex).pack(side="left", padx=10)
         tk.Button(button_frame, text="Export Manufacturing Instructions", command=self.export_manufacturing_instructions_latex).pack(side="left", padx=10)
 
 
@@ -68,25 +70,6 @@ class WiringVisualizer(tk.Frame):
                     self.canvas.create_rectangle(s.coords[0]-5, s.coords[1]-15, s.coords[0]+5, s.coords[1]+15, fill="black")
                 case _:
                     self.canvas.create_oval(s.coords[0]-3, s.coords[1]-3, s.coords[0]+3, s.coords[1]+3, fill="red")
-
-    def assign_wire_gauge(self, amperage, length_ft):
-        if amperage <= 15:
-            return "14 AWG" if length_ft <= 50 else "12 AWG"
-        elif amperage <= 20:
-            return "12 AWG" if length_ft <= 50 else "10 AWG"
-        elif amperage <= 30:
-            return "10 AWG" if length_ft <= 50 else "8 AWG"
-        else:
-            return "Consult engineer"
-    
-    def get_total_length(self, path, height, scale):
-        total_length = sum(
-                    ((path[i+1][0]-path[i][0])**2 + (path[i+1][1]-path[i][1])**2)**0.5
-                    for i in range(len(path)-1)
-                ) * scale
-        
-        return total_length+float(height)
-
     def calculate_cost(self):
 
         wire_totals = defaultdict(float)
@@ -149,22 +132,16 @@ class WiringVisualizer(tk.Frame):
             if s.room and s.type != "electrical panel":
                 symbols_by_room[s.room].append(s)
 
-        #Room by Room Wiring
+        #Step 1: Room by Room Wiring
         paths_by_room = {}
         total_amp_by_room = {}
 
         for room, devices in symbols_by_room.items():
 
-            #If room has no junction box, skip it
-            junctions = [s for s in devices if s.type == "junction box"]
-            if not junctions:
-                print(f"⚠️ Room '{room}' has no junction box. Skipping...")
-                continue
-            
-
-            #Start Device to Junction Wiring for the current room
-            junction = junctions[0]
+            #Get Junction Box in current room
+            junction = next(s for s in devices if s.type == "junction box")
             junction_node = (int(junction.coords[0]), int(junction.coords[1]))
+
             room_paths = []
             total_amp = 0
 
@@ -175,35 +152,33 @@ class WiringVisualizer(tk.Frame):
                 try:
                     path = nx.shortest_path(self.container['graph'], source=device_node, target=junction_node) # Get path
                     total_amp+=device.amperage #Get room total amperage
-                    length = self.get_total_length(path,device.height,self.container['scale']) #Get total lenght of path
-                    gauge = self.assign_wire_gauge(device.amperage,length) #Get correct Gauge for the Path
-                    room_paths.append({device:[path,length, gauge]}) #Append results to the main dict
+                    room_paths.append({device: Wire(path,device,junction,self.container['scale'])}) #Symbol: Wire, automatically calculates length and gauge
                 except nx.NetworkXNoPath:
-                    print(f"❌ No path between {device_node} and junction in room '{room}'")
+                    print(f"No path between {device_node} and {junction} in room '{room}'")
 
             paths_by_room[room] = room_paths #Get all paths
             total_amp_by_room[room] = min(total_amp*0.3, 20) #Get all rooms amps
+            junction.amperage = total_amp_by_room[room]
 
 
-        #Home Run Wiring
-        panel_symbols = [s for s in self.container['symbols'] if s.type == "electrical panel"]
-        if panel_symbols:
-            panel_node = (int(panel_symbols[0].coords[0]), int(panel_symbols[0].coords[1]))
+        #Step 2: Home Run Wiring
+        electrical_panel = next(s for s in self.container['symbols'] if s.type == "electrical panel")
+        if electrical_panel:
+            panel_node = (int(electrical_panel.coords[0]), int(electrical_panel.coords[1]))
             panel_paths = []
             for s in self.container['symbols']:
                 if s.type == "junction box":
                     junction_node = (int(s.coords[0]), int(s.coords[1]))
                     try:
-                        path = nx.shortest_path(self.container['graph'], source=junction_node, target=panel_node)
-                        total_amp = total_amp_by_room[s.room]
-                        length = self.get_total_length(path,panel_symbols[0].height,self.container['scale'])
-                        gauge = self.assign_wire_gauge(total_amp,length)
-                        panel_paths.append({s:[path,length,gauge]})
+                        path = nx.shortest_path(self.container['graph'], source=junction_node, target=panel_node) 
+                        panel_paths.append({s:Wire(path,s,electrical_panel,self.container['scale'])})
                     except nx.NetworkXNoPath:
-                        print(f"No path from junction at {junction_node} to panel")
+                        print(f"No path from {s} to {electrical_panel}")
             paths_by_room["panel_connections"] = panel_paths
         else:
             print(" No electrical panel found. Skipping panel connections.")
+
+
         print(paths_by_room)
         self.paths_by_room = paths_by_room
         self.panel_max_amp = sum(total_amp_by_room.values())
@@ -214,7 +189,8 @@ class WiringVisualizer(tk.Frame):
         for i, (room, device_path_list) in enumerate(paths_by_room.items()):
             color = colors[i % len(colors)]
             for device_path in device_path_list:
-                for device, (path, length, gauge) in device_path.items():
+                for device, wire in device_path.items():  # `wire` is now a Wire instance
+                    path = wire.path
                     for j in range(len(path) - 1):
                         x1, y1 = path[j]
                         x2, y2 = path[j + 1]
@@ -226,7 +202,7 @@ class WiringVisualizer(tk.Frame):
                         mx, my = path[mid_index]
                         self.canvas.create_text(
                             mx, my - 10,
-                            text=f"{device.type.capitalize()} ({gauge})",
+                            text=f"{device.type.capitalize()} ({wire.gauge})",
                             fill=color,
                             font=("Arial", 7)
                         )
@@ -308,9 +284,7 @@ class WiringVisualizer(tk.Frame):
         print(f"LaTeX BoM with costs exported to: {os.path.abspath(filename)}")
 
     def export_manufacturing_instructions_latex(self, filename="manufacturing_instructions.tex"):
-        from collections import defaultdict
         import re
-
         def latex_escape(text):
             return re.sub(r'_', r'\_', str(text))
 
@@ -325,55 +299,89 @@ class WiringVisualizer(tk.Frame):
             r"\begin{center}",
             r"\LARGE \textbf{Wiring Harness Manufacturing Instructions}",
             r"\end{center}",
-            r"\vspace{1em}"
+            r"\vspace{1em}",
         ]
 
-        wire_id_counter = defaultdict(int)
-
-        # === Room Assemblies ===
+        # === CUTTING SECTION ===
+        lines.append(r"\section*{Cutting Instructions}")
         for room, device_path_list in self.paths_by_room.items():
             if room == "panel_connections":
                 continue
-            lines.append(fr"\section*{{Room: {latex_escape(room)}}}")
+            lines.append(fr"\subsection*{{Room: {latex_escape(room)}}}")
             lines.append(r"\begin{enumerate}[leftmargin=*]")
-
             for device_path in device_path_list:
-                for device, (path, length, gauge) in device_path.items():
-                    
-                    wire_id_counter[room] += 1
-                    wire_label = latex_escape(f"{room}_wire_{wire_id_counter[room]}")
-                    symbol_type = device.type
-
+                for _, wire in device_path.items():
                     lines.append(
-                        fr"\item Cut \textbf{{{round(length, 2)}}} ft of \textbf{{{gauge}}} wire labeled \textbf{{{wire_label}}}.\\"
-                        fr"Connect from \texttt ({symbol_type} with id {device.id}) to {room} junction box ."
+                        fr"\item Cut \textbf{{{round(wire.length, 2)}}} ft of \textbf{{{wire.gauge}}} wire labeled \texttt{{{wire.id}}}.\\"
+                        fr"Connect from \texttt{{{wire.start_symbol.type} (ID: {wire.start_symbol.id})}} to junction box \texttt{{ID: {wire.end_symbol.id}}}."
                     )
-
             lines.append(r"\end{enumerate}")
 
-        # === Home Run Wiring ===
+        # Home Run Cutting
         if "panel_connections" in self.paths_by_room:
-            lines.append(r"\section*{Home Run Wiring}")
+            lines.append(r"\subsection*{Home Run Wires}")
             lines.append(r"\begin{enumerate}[leftmargin=*]")
-            home_run_id = 1
             for device_path in self.paths_by_room["panel_connections"]:
-                for junction, (path, length, gauge) in device_path.items():
-                    label = f"home_run_{home_run_id}"
-                    start = tuple(map(int, path[0]))
-                    end = tuple(map(int, path[-1]))
+                for _, wire in device_path.items():
                     lines.append(
-                        fr"\item Cut \textbf{{{round(length, 2)}}} ft of \textbf{{{gauge}}} wire labeled \textbf{{{latex_escape(label)}}}.\\"
-                        fr"Connect from junction box at {junction.room} to Electrical Panel."
+                        fr"\item Cut \textbf{{{round(wire.length, 2)}}} ft of \textbf{{{wire.gauge}}} wire labeled \texttt{{{wire.id}}}.\\"
+                        fr"Connect from junction box \texttt{{ID: {wire.start_symbol.id}, Room: {wire.start_symbol.room}}} "
+                        fr"to Electrical Panel \texttt{{ID: {wire.end_symbol.id}}}."
                     )
-                    home_run_id += 1
             lines.append(r"\end{enumerate}")
 
-        # === Panel Assembly ===
-        lines.append(r"\section*{Electrical Panel Assembly}")
+        # === STRIPPING SECTION ===
+        lines.append(r"\section*{Stripping Instructions}")
         lines.append(r"\begin{enumerate}[leftmargin=*]")
-        for i in range(1, home_run_id):
+        for room_wires in self.paths_by_room.values():
+            for device_path in room_wires:
+                for _, wire in device_path.items():
+                    lines.append(
+                        fr"\item Wire \texttt{{{wire.id}}}: Strip \texttt{{{wire.start_symbol.type}}} end 0.5in, "
+                        fr"Strip \texttt{{{wire.end_symbol.type}}} end 0.5in."
+                    )
+        lines.append(r"\end{enumerate}")
+
+        # === JUNCTION BOX CONNECTIONS ===
+        lines.append(r"\section*{Junction Box Connections}")
+        for room, device_path_list in self.paths_by_room.items():
+            if room == "panel_connections":
+                continue
+            lines.append(fr"\subsection*{{Room: {latex_escape(room)}}}")
+            lines.append(r"\begin{enumerate}[leftmargin=*]")
+            for device_path in device_path_list:
+                for _, wire in device_path.items():
+                    lines.append(
+                        fr"\item Connect wire \texttt{{{wire.id}}} to junction box \texttt{{ID: {wire.end_symbol.id}, Room: {wire.end_symbol.room}}}."
+                    )
+            lines.append(r"\end{enumerate}")
+
+        # === HOME RUN CONNECTIONS ===
+        lines.append(r"\section*{Home Run Connections}")
+        lines.append(r"\begin{enumerate}[leftmargin=*]")
+        for device_path in self.paths_by_room.get("panel_connections", []):
+            for _, wire in device_path.items():
+                lines.append(
+                    fr"\item Connect home run wire \texttt{{{wire.id}}} to junction box in Room \texttt{{{wire.start_symbol.room}}} (ID: {wire.start_symbol.id})."
+                )
+        lines.append(r"\end{enumerate}")
+
+        # === ELECTRICAL PANEL CONNECTIONS ===
+        lines.append(r"\section*{Electrical Panel Connections}")
+        lines.append(r"\subsection*{Home Run to Breaker}")
+        lines.append(r"\begin{enumerate}[leftmargin=*]")
+        for idx, device_path in enumerate(self.paths_by_room.get("panel_connections", []), start=1):
+            for _, wire in device_path.items():
+                lines.append(
+                    fr"\item Connect Home Run wire \texttt{{{wire.id}}} to breaker slot \#{idx}."
+                )
+        lines.append(r"\end{enumerate}")
+
+        lines.append(r"\subsection*{Breaker to Panel}")
+        lines.append(r"\begin{enumerate}[leftmargin=*]")
+        for idx, device_path in enumerate(self.paths_by_room.get("panel_connections", []), start=1):
             lines.append(
-                fr"\item Connect \textbf{{home\_run\_{i}}} to breaker slot \#{i}. Use 20A GFCI/AFCI breaker."
+                fr"\item Connect breaker \#{idx} to Electrical Panel main bus."
             )
         lines.append(r"\end{enumerate}")
 
@@ -381,6 +389,4 @@ class WiringVisualizer(tk.Frame):
 
         with open(filename, "w") as f:
             f.write("\n".join(lines))
-
         print(f"LaTeX manufacturing instructions exported to: {os.path.abspath(filename)}")
-
