@@ -29,6 +29,7 @@ class SymbolAnnotator(tk.Frame):
         self.current_symbol_idx = 0
         self.img_tk = None
         self.scale_point_ids = []
+        self.active_switch = None
 
         #Initailize current app UI elements
         frame = tk.Frame(self)
@@ -168,6 +169,7 @@ class SymbolAnnotator(tk.Frame):
             case _:
                 self.canvas.create_oval(canvas_x-3, canvas_y-3, canvas_x+3, canvas_y+3, fill="red")
         self.update_annotation_list()
+
     def select_controlled_lights(self, event, switch_symbol):
         canvas_x = self.canvas.canvasx(event.x)
         canvas_y = self.canvas.canvasy(event.y)
