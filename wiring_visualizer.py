@@ -2,7 +2,8 @@ import tkinter as tk
 from PIL import Image, ImageTk, ImageGrab
 import networkx as nx
 from collections import defaultdict
-from wire import Wire
+from classes.wire import Wire
+from datetime import datetime
 import re
 import csv
 import os
@@ -22,6 +23,9 @@ class WiringVisualizer(tk.Frame):
         self.pack(fill="both", expand=True)
         self.master = master
         self.container = container
+        output_dir = os.path.join(os.path.dirname(__file__), "output")
+        os.makedirs(output_dir, exist_ok=True)
+        self.output_path = output_dir
 
         self.canvas_frame = tk.Frame(self)
         self.canvas_frame.pack(fill="both", expand=True)
@@ -246,6 +250,11 @@ class WiringVisualizer(tk.Frame):
                 os.remove(ps_filename)
 
     def export_bom_latex(self, filename="bill_of_materials.tex"):
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"bill_of_materials_{timestamp}.tex"
+        output = os.path.join(self.output_path, filename)
+
         
         grand_total, table_rows = self.calculate_cost()
         # === Create LaTeX content
@@ -279,12 +288,17 @@ class WiringVisualizer(tk.Frame):
             r"\end{document}"
         ])
 
-        with open(filename, "w") as f:
+        with open(output, "w") as f:
             f.write("\n".join(lines))
-        print(f"LaTeX BoM with costs exported to: {os.path.abspath(filename)}")
+        print(f"LaTeX BoM with costs exported to: {os.path.abspath(output)}")
 
     def export_manufacturing_instructions_latex(self, filename="manufacturing_instructions.tex"):
-        import re
+        #Handle output path and file name
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"manufacturing_instructinos_{timestamp}.tex"
+        output = os.path.join(self.output_path, filename)
+
+
         def latex_escape(text):
             return re.sub(r'_', r'\_', str(text))
 
@@ -384,9 +398,9 @@ class WiringVisualizer(tk.Frame):
                 fr"\item Connect breaker \#{idx} to Electrical Panel main bus."
             )
         lines.append(r"\end{enumerate}")
-
         lines.append(r"\end{document}")
 
-        with open(filename, "w") as f:
+        #Export file
+        with open(output, "w") as f:
             f.write("\n".join(lines))
-        print(f"LaTeX manufacturing instructions exported to: {os.path.abspath(filename)}")
+        print(f"LaTeX manufacturing instructions exported to: {os.path.abspath(output)}")

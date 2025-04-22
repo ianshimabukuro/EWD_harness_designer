@@ -10,9 +10,9 @@ from graph_utils import draw_paths_on_grid  # optional: for matplotlib plotting
 def main():
     root = tk.Tk()
     root.title("Electrical Planner")
-    root.geometry("1400x900")  # optional
+    root.geometry("1400x900")  
 
-    container = {}  # Holds references to shared data between frames
+    container = {} 
 
     # === Step 3: WiringVisualizer ===
     def start_wiring_visualizer(container):
