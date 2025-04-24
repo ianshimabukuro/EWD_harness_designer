@@ -4,15 +4,22 @@ import tkinter as tk
 from symbol_annotator import SymbolAnnotator
 from room_annotator import RoomAnnotator
 from wiring_visualizer import WiringVisualizer
-from graph_utils import draw_paths_on_grid  # optional: for matplotlib plotting
-
+from utils.graph_utils import draw_paths_on_grid  # optional: for matplotlib plotting
+from config import *
 
 def main():
     root = tk.Tk()
     root.title("Electrical Planner")
     root.geometry("1400x900")  
 
-    container = {} 
+    container = {
+        'ceiling_height': CEILING_HEIGHT,
+        'default': DEFAULTS,
+        'symbols': [],
+        'image_path': None,
+        'symbol_types' : SYMBOL_TYPES,
+        'unit_prices': UNIT_PRICES
+    }
 
     # === Step 3: WiringVisualizer ===
     def start_wiring_visualizer(container):

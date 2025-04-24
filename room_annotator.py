@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import simpledialog
 from PIL import Image, ImageTk
 from matplotlib.path import Path
-from hanan_utils import annotations_to_hanan_grid
+from utils.hanan_utils import annotations_to_hanan_grid
 
 
 class RoomAnnotator(tk.Frame):

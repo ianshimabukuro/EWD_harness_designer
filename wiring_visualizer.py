@@ -8,13 +8,7 @@ import re
 import csv
 import os
 
-UNIT_PRICES = {
-    "14 AWG": 0.5,
-    "12 AWG": 0.6,
-    "10 AWG": 0.8,
-    "8 AWG": 1,
-    "Consult engineer": 0.00  # default fallback
-}
+
 
 class WiringVisualizer(tk.Frame):
     def __init__(self, master,container):
@@ -99,7 +93,7 @@ class WiringVisualizer(tk.Frame):
 
         # Wires
         for gauge, total_len in wire_totals.items():
-            unit_price = UNIT_PRICES.get(gauge, 0.00)
+            unit_price = self.container['unit_prices'].get(gauge, 0.00)
             cost = round(total_len * unit_price, 2)
             grand_total += cost
             table_rows.append((1, f"{gauge} wire", round(total_len, 2), unit_price, cost))
@@ -139,10 +133,8 @@ class WiringVisualizer(tk.Frame):
         #Step 1: Room by Room Wiring
         paths_by_room = {}
         total_amp_by_room = {}
-
+        
         for room, devices in symbols_by_room.items():
-
-            #Get Junction Box in current room
             junction = next(s for s in devices if s.type == "junction box")
             junction_node = (int(junction.coords[0]), int(junction.coords[1]))
 
@@ -152,17 +144,40 @@ class WiringVisualizer(tk.Frame):
             for device in devices:
                 if device is junction:
                     continue
-                device_node = (int(device.coords[0]), int(device.coords[1]))
-                try:
-                    path = nx.shortest_path(self.container['graph'], source=device_node, target=junction_node) # Get path
-                    total_amp+=device.amperage #Get room total amperage
-                    room_paths.append({device: Wire(path,device,junction,self.container['scale'])}) #Symbol: Wire, automatically calculates length and gauge
-                except nx.NetworkXNoPath:
-                    print(f"No path between {device_node} and {junction} in room '{room}'")
 
-            paths_by_room[room] = room_paths #Get all paths
-            total_amp_by_room[room] = min(total_amp*0.3, 20) #Get all rooms amps
+                # --- Switch Case: Add wires from light → switch, then switch → junction ---
+                if device.type == "switch":
+                    for light in device.controls:
+                        try:
+                            light_node = (int(light.coords[0]), int(light.coords[1]))
+                            switch_node = (int(device.coords[0]), int(device.coords[1]))
+                            light_path = nx.shortest_path(self.container['graph'], source=light_node, target=switch_node)
+                            room_paths.append({light: Wire(light_path, light, device, self.container['scale'])})
+                            total_amp += light.amperage
+                        except nx.NetworkXNoPath:
+                            print(f"❌ No path from light {light.id} to switch {device.id} in room '{room}'")
+
+                    try:
+                        switch_path = nx.shortest_path(self.container['graph'], source=switch_node, target=junction_node)
+                        room_paths.append({device: Wire(switch_path, device, junction, self.container['scale'])})
+                        total_amp += device.amperage
+                    except nx.NetworkXNoPath:
+                        print(f"❌ No path from switch {device.id} to junction in room '{room}'")
+
+                # --- Other Devices (e.g. outlets) ---
+                elif device.type != "light":  # lights are only added via their switch
+                    try:
+                        device_node = (int(device.coords[0]), int(device.coords[1]))
+                        path = nx.shortest_path(self.container['graph'], source=device_node, target=junction_node)
+                        room_paths.append({device: Wire(path, device, junction, self.container['scale'])})
+                        total_amp += device.amperage
+                    except nx.NetworkXNoPath:
+                        print(f"❌ No path from {device.id} to junction in room '{room}'")
+
+            paths_by_room[room] = room_paths
+            total_amp_by_room[room] = min(total_amp * 0.3, 20)
             junction.amperage = total_amp_by_room[room]
+
 
 
         #Step 2: Home Run Wiring
@@ -189,27 +204,51 @@ class WiringVisualizer(tk.Frame):
         self.draw_paths(paths_by_room)
 
     def draw_paths(self, paths_by_room):
-        colors = ["red", "green", "blue", "orange", "purple", "cyan"]
-        for i, (room, device_path_list) in enumerate(paths_by_room.items()):
-            color = colors[i % len(colors)]
+        for room, device_path_list in paths_by_room.items():
             for device_path in device_path_list:
-                for device, wire in device_path.items():  # `wire` is now a Wire instance
+                for device, wire in device_path.items():
                     path = wire.path
-                    for j in range(len(path) - 1):
-                        x1, y1 = path[j]
-                        x2, y2 = path[j + 1]
-                        self.canvas.create_line(x1, y1, x2, y2, fill=color, width=2)
+                    x1, y1 = path[0]
+                    x2, y2 = path[-1]
 
-                    # Optional: label at the midpoint
+                    # === Determine wire category and styling
+                    if wire.start_symbol.type == "light" and wire.end_symbol.type == "switch":
+                        color = "blue"
+                        style = (2, 4)  # dashed
+                        width = 2
+                    elif wire.start_symbol.type == "switch" and wire.end_symbol.type == "junction box":
+                        color = "orange"
+                        style = (2, 2)
+                        width = 2
+                    elif wire.start_symbol.type == "junction box" and wire.end_symbol.type == "electrical panel":
+                        color = "black"
+                        style = None
+                        width = 3
+                    else:
+                        color = "red"
+                        style = None
+                        width = 2
+
+                    # === Draw the line path
+                    for i in range(len(path) - 1):
+                        x1, y1 = path[i]
+                        x2, y2 = path[i + 1]
+                        if style:
+                            self.canvas.create_line(x1, y1, x2, y2, fill=color, width=width, dash=style)
+                        else:
+                            self.canvas.create_line(x1, y1, x2, y2, fill=color, width=width)
+
+                    # === Midpoint label
                     if path:
                         mid_index = len(path) // 2
                         mx, my = path[mid_index]
                         self.canvas.create_text(
                             mx, my - 10,
-                            text=f"{device.type.capitalize()} ({wire.gauge})",
+                            text=f"{wire.start_symbol.type} → {wire.end_symbol.type} ({wire.gauge})",
                             fill=color,
                             font=("Arial", 7)
                         )
+
         print(f"✅ Wiring paths drawn for rooms: {list(paths_by_room.keys())}")
 
         
