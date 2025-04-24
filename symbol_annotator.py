@@ -19,20 +19,19 @@ class SymbolAnnotator(tk.Frame):
         self.active_switch = None
 
         #Initailize current app UI elements
-                #Buttons
         frame = tk.Frame(self)
         frame.pack(fill="x")
         tk.Button(frame, text="Load Image", command=self.load_image).pack(side="left")
         tk.Button(frame, text="Done", command=self.finish).pack(side="left")
         tk.Button(frame, text="Finish Light Selection", command=self.finish_light_selection).pack(side="left")
-                #Drop Down Menu
+        
         self.selected_symbol = tk.StringVar(value=self.symbol_types[0])
         tk.OptionMenu(frame, self.selected_symbol, *self.symbol_types, command=self.symbol_selected).pack(side="left")
-                #Text
+       
         self.status_var = tk.StringVar()
         tk.Label(self, textvariable=self.status_var).pack(fill="x")
 
-                #Scroll bars
+        #Scroll bars
         canvas_frame = tk.Frame(self)
         canvas_frame.pack(fill="both", expand=True)
 
@@ -47,14 +46,14 @@ class SymbolAnnotator(tk.Frame):
         v_scroll.config(command=self.canvas.yview)
 
 
-                # Annotation Display UI
+        # Annotation Display UI
         summary_frame = tk.Frame(self)
         summary_frame.pack(fill="x", padx=10, pady=5)
         tk.Label(summary_frame, text="Current Annotations:").pack(anchor="w")
         self.annotation_listbox = tk.Listbox(summary_frame, height=6, width=80)
         self.annotation_listbox.pack(fill="x")
 
-                #Bindings and Others
+        #Bindings and Others
         self.canvas.bind("<Button-1>", self.click_event)
         self.scale_points = []
         self.update_status()
