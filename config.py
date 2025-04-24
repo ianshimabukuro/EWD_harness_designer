@@ -1,4 +1,4 @@
-
+#Config Files for Default Values
 SYMBOL_TYPES = ["outlet", "switch","light","junction box","electrical panel"]
 
 CEILING_HEIGHT = 8
