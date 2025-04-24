@@ -1,2 +1,5 @@
 *.ps
 *.tex
+*.png
+/output
+/__pycache__
