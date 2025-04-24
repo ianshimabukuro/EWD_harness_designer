@@ -1,4 +1,4 @@
-# 🛠️ Electrical Wiring Design for Residential Harnesses
+# Electrical Wiring Design for Residential Harnesses
 
 A lightweight, Tkinter-based tool for manually annotating electrical symbols on a floor plan, generating a wiring layout, and exporting manufacturing-ready documentation.
 
@@ -6,7 +6,7 @@ A lightweight, Tkinter-based tool for manually annotating electrical symbols on 
 The main idea behind the program is to represent the electrical plan as a **grid of all possible paths**.  
 Since every symbol is placed on a **wall or ceiling**, creating a **Hanan grid** of all annotated symbols naturally respects structural boundaries (e.g., walls).
 
-## ✅ Requirements
+### Requirements
 
 - Python **3.12 or higher**
 
@@ -16,7 +16,7 @@ Recommended: Install required libraries via:
 pip install -r requirements.txt
  ```
 
-### 🔌 Wiring Process
+### Wiring Process
 
 The wiring is done in two steps:
 
@@ -29,7 +29,7 @@ The wiring is done in two steps:
 
 ---
 
-## ⚙️ Defaults and Configuration
+### Defaults and Configuration
 
 Default values for:
 - Symbol **height**
@@ -41,22 +41,22 @@ Default values for:
 
 ## 🔁 Flow of the Program
 
-### 🖊️ Symbol Annotator
+### Symbol Annotator
 1. Load the **Electrical Plan Image**.
 2. Select two points to set the **Pixel/Ft scale**.
 3. Annotate all symbols (e.g., **lights**, **switches**, **outlets**).
 4. Once all symbols are annotated, click **Done**.
 
-### 🏷️ Room Annotator
+### Room Annotator
 1. Define the perimeter of each room by selecting points on the grid (**always clockwise**).
 2. Click **"Finish Room"** and assign a name.
 3. When all rooms are assigned, click **Done**.
 
-### 📐 Wiring Visualizer
+### Wiring Visualizer
 1. The **2D wiring layout** will be automatically generated.
 2. You can:
-   - 🖼️ Export the image of the wiring layout.
-   - 🧾 Export the **manufacturing instructions**.
-   - 📦 Export the **Bill of Materials (BoM)**.
+   - Export the image of the wiring layout.
+   - Export the **manufacturing instructions**.
+   - Export the **Bill of Materials (BoM)**.
 
 
