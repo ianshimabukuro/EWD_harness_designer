@@ -35,15 +35,12 @@ class SymbolAnnotator(tk.Frame):
         # --- Canvas + scrollbars ---
         canvas_frame = tk.Frame(self)
         canvas_frame.pack(fill="both", expand=True)
-        h_scroll = tk.Scrollbar(canvas_frame, orient="horizontal")
-        h_scroll.pack(side="bottom", fill="x")
-        v_scroll = tk.Scrollbar(canvas_frame, orient="vertical")
-        v_scroll.pack(side="right", fill="y")
+        h_scroll = tk.Scrollbar(canvas_frame, orient="horizontal"); h_scroll.pack(side="bottom", fill="x")
+        v_scroll = tk.Scrollbar(canvas_frame, orient="vertical"); v_scroll.pack(side="right", fill="y")
         self.canvas = tk.Canvas(canvas_frame, bg="white",
                                 xscrollcommand=h_scroll.set, yscrollcommand=v_scroll.set)
         self.canvas.pack(side="left", fill="both", expand=True)
-        h_scroll.config(command=self.canvas.xview)
-        v_scroll.config(command=self.canvas.yview)
+        h_scroll.config(command=self.canvas.xview); v_scroll.config(command=self.canvas.yview)
 
         # --- Annotation list ---
         summary = tk.Frame(self)
@@ -52,7 +49,7 @@ class SymbolAnnotator(tk.Frame):
         self.annotation_listbox = tk.Listbox(summary, height=6, width=80)
         self.annotation_listbox.pack(fill="x")
         # Bind double-click to edit
-        self.annotation_listbox.bind("<Double-Button-1>", self.open_edit_dialog)
+        self.annotation_listbox.bind("<Double-Button-1>", self.open_edit_dialog_for)
 
         # --- Event binding ---
         self.canvas.bind("<Button-1>", self.click_event)
@@ -89,7 +86,7 @@ class SymbolAnnotator(tk.Frame):
     def begin_scale_collection(self):
         self.scale_points.clear()
         self.scale_set = False
-        self.status_var.set("Right-click two points with known real-world distance to set the scale.")
+        self.status_var.set("Left-click two points with known real-world distance to set the scale.")
         # Temporarily override click
         self.canvas.unbind("<Button-1>")
         self.canvas.bind("<Button-1>", self.collect_scale_point)
@@ -117,9 +114,9 @@ class SymbolAnnotator(tk.Frame):
             scale = real / pixel_dist
             self.container['scale'] = scale
             self.scale_set = True
-            self.status_var.set(f"📐 Scale set: {scale:.4f} ft/pixel")
+            self.status_var.set(f"Scale set: {scale:.4f} ft/pixel")
         else:
-            self.status_var.set("⚠️ Invalid scale. Reload image to retry.")
+            self.status_var.set("Invalid scale. Reload image to retry.")
         # Clean up dots
         for d in self.scale_point_ids:
             self.canvas.delete(d)
@@ -135,23 +132,20 @@ class SymbolAnnotator(tk.Frame):
 
     def click_event(self, event):
         if not self.scale_set:
-            # Ignore symbol clicks until scale is set
             return
 
         x = self.canvas.canvasx(event.x)
         y = self.canvas.canvasy(event.y)
-        # Check existing symbol click
-        clicked = None
+
+        # Check for click on existing symbol first
+        R = 6  # pick radius slightly larger than symbol
         for sym in self.container["symbols"]:
             sx, sy = sym.coords
-            if (x - sx)**2 + (y - sy)**2 <= 6**2:
-                clicked = sym
-                break
-        if clicked:
-            self.open_edit_dialog()
-            return
+            if (x - sx)**2 + (y - sy)**2 <= R*R:
+                self.open_edit_dialog_for(sym)
+                return
 
-        # Otherwise: add new symbol
+        # Otherwise add a new symbol
         stype = self.selected_symbol.get()
         defs = self.defaults.get(stype, {})
         sym = Symbol(stype, (x, y), room=None,
@@ -165,12 +159,10 @@ class SymbolAnnotator(tk.Frame):
             self.status_var.set("Now click the lights this switch controls.")
         elif stype.lower() == "light":
             if not self.active_switch:
-                self.status_var.set("⚠️ Place a switch first.")
+                self.status_var.set("Place a switch first.")
                 return
-            # Link light to switch
             self.active_switch.controls.append(sym)
             self.container["symbols"].append(sym)
-            # draw connection
             sx, sy = self.active_switch.coords
             self.canvas.create_line(sx, sy, x, y,
                                     fill="blue", dash=(2,2),
@@ -179,7 +171,6 @@ class SymbolAnnotator(tk.Frame):
             self.container["symbols"].append(sym)
             self.active_switch = None
 
-        # Draw symbol & update list
         self.draw_symbol(sym)
         self.update_annotation_list()
 
@@ -204,97 +195,68 @@ class SymbolAnnotator(tk.Frame):
                                          fill="black", tags=tag)
 
     def update_annotation_list(self):
-        """Refresh listbox entries for current symbol type."""
         self.annotation_listbox.delete(0, tk.END)
         sel = self.selected_symbol.get()
         for sym in self.container["symbols"]:
             if sym.type == sel:
                 ctrl = ""
                 if sym.type.lower() == "switch" and sym.controls:
-                    pts = [f"({int(l.coords[0])},{int(l.coords[1])})"
-                           for l in sym.controls]
-                    ctrl = " → " + ", ".join(pts)
+                    pts = [f"({int(l.coords[0])},{int(l.coords[1])})" for l in sym.controls]
+                    ctrl = " -> " + ", ".join(pts)
                 txt = (f"{sym.type} (ID:{sym.id}) at "
                        f"({int(sym.coords[0])}, {int(sym.coords[1])}) | "
                        f"Amperage: {sym.amperage} | Height: {sym.height}{ctrl}")
                 self.annotation_listbox.insert(tk.END, txt)
 
-    def open_edit_dialog(self, event=None):
-        """Open Toplevel dialog to edit or delete selected symbol."""
-        # Determine selected symbol from listbox
-        idx = self.annotation_listbox.curselection()
-        if not idx:
-            return
-        entry = self.annotation_listbox.get(idx)
-        sid = entry.split("ID:")[1].split(")")[0]
-        sym = next((s for s in self.container["symbols"] if s.id == sid), None)
-        if not sym:
-            return
-
+    def open_edit_dialog_for(self, sym):
         dlg = tk.Toplevel(self)
         dlg.title(f"Edit Symbol (ID: {sym.id})")
-        # Fixed type label
         tk.Label(dlg, text=f"Type: {sym.type}", font=("Arial", 12, "bold"))\
           .grid(row=0, column=0, columnspan=2, pady=(10,5))
 
-        # Coordinate entries
-        tk.Label(dlg, text="X coordinate:").grid(row=1, column=0,
-                                                 sticky="e", padx=5)
+        tk.Label(dlg, text="X coordinate:").grid(row=1, column=0, sticky="e", padx=5)
         xvar = tk.StringVar(value=str(sym.coords[0]))
         tk.Entry(dlg, textvariable=xvar).grid(row=1, column=1, padx=5)
 
-        tk.Label(dlg, text="Y coordinate:").grid(row=2, column=0,
-                                                 sticky="e", padx=5)
+        tk.Label(dlg, text="Y coordinate:").grid(row=2, column=0, sticky="e", padx=5)
         yvar = tk.StringVar(value=str(sym.coords[1]))
         tk.Entry(dlg, textvariable=yvar).grid(row=2, column=1, padx=5)
 
-        # Optional fields
         defs = self.defaults.get(sym.type, {})
         row = 3
         amps_var = None
         if defs.get("amperage") is not None:
-            tk.Label(dlg, text="Amperage:").grid(row=row, column=0,
-                                                 sticky="e", padx=5)
+            tk.Label(dlg, text="Amperage:").grid(row=row, column=0, sticky="e", padx=5)
             amps_var = tk.StringVar(value=str(sym.amperage))
-            tk.Entry(dlg, textvariable=amps_var).grid(row=row, column=1,
-                                                      padx=5)
+            tk.Entry(dlg, textvariable=amps_var).grid(row=row, column=1, padx=5)
             row += 1
 
         hgt_var = None
         if defs.get("height") is not None:
-            tk.Label(dlg, text="Height:").grid(row=row, column=0,
-                                               sticky="e", padx=5)
+            tk.Label(dlg, text="Height:").grid(row=row, column=0, sticky="e", padx=5)
             hgt_var = tk.StringVar(value=str(sym.height))
-            tk.Entry(dlg, textvariable=hgt_var).grid(row=row, column=1,
-                                                     padx=5)
+            tk.Entry(dlg, textvariable=hgt_var).grid(row=row, column=1, padx=5)
             row += 1
 
-        # Actions
         def save():
-            # Update coords
             try:
                 newx = float(xvar.get()); newy = float(yvar.get())
                 sym.coords = (newx, newy)
             except ValueError:
-                messagebox.showerror("Invalid input",
-                                     "Coordinates must be numbers.")
+                messagebox.showerror("Invalid input", "Coordinates must be numbers.")
                 return
-            # Update amperage/height
             if amps_var:
                 try:
                     sym.amperage = int(amps_var.get())
                 except ValueError:
-                    messagebox.showerror("Invalid input",
-                                         "Amperage must be integer.")
+                    messagebox.showerror("Invalid input", "Amperage must be integer.")
                     return
             if hgt_var:
                 try:
                     sym.height = int(hgt_var.get())
                 except ValueError:
-                    messagebox.showerror("Invalid input",
-                                         "Height must be integer.")
+                    messagebox.showerror("Invalid input", "Height must be integer.")
                     return
-            # Refresh
             self.refresh_canvas()
             self.update_annotation_list()
             dlg.destroy()
@@ -310,10 +272,8 @@ class SymbolAnnotator(tk.Frame):
         tk.Button(btns, text="Cancel", command=dlg.destroy).pack(side="left", padx=5)
 
     def delete_symbol(self, sym):
-        """Remove sym and its connections, then refresh canvas and list."""
         if self.active_switch == sym:
             self.active_switch = None
-        # If it's a switch, clear its controls
         if sym.type.lower() == "switch":
             sym.controls.clear()
         try:
@@ -324,13 +284,10 @@ class SymbolAnnotator(tk.Frame):
         self.update_annotation_list()
 
     def refresh_canvas(self):
-        """Redraw only symbols and connections, preserving the background."""
-        # Remove all old symbols/connections
+        # Remove only symbols & connections
         self.canvas.delete("symbol")
         self.canvas.delete("connection")
-        # Redraw each symbol and its switch→light lines
         for sym in self.container["symbols"]:
-            # connections first
             if sym.type.lower() == "switch":
                 sx, sy = sym.coords
                 for lt in sym.controls:
@@ -338,7 +295,6 @@ class SymbolAnnotator(tk.Frame):
                     self.canvas.create_line(sx, sy, lx, ly,
                                             fill="blue", dash=(2,2),
                                             tags=("connection",))
-            # then symbol itself
             x, y = sym.coords
             tag = ("symbol", f"id_{sym.id}")
             t = sym.type.lower()
@@ -364,7 +320,7 @@ class SymbolAnnotator(tk.Frame):
             self.selected_symbol.set("switch")
             self.status_var.set("Select symbols as usual.")
         else:
-            self.status_var.set("⚠️ No active switch to finish.")
+            self.status_var.set("No active switch to finish.")
 
     def finish(self):
         self.pack_forget()
