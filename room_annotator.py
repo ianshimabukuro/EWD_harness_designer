@@ -36,7 +36,7 @@ class RoomAnnotator(tk.Frame):
         self.img_tk = ImageTk.PhotoImage(self.image)
         self.canvas.create_image(0, 0, anchor="nw", image=self.img_tk)
 
-        self.container['graph'], self.x_coords, self.y_coords, self.container['symbols'] = annotations_to_hanan_grid(self.container['symbols'], self.container['scale'], threshold=10)
+        self.container['graph'], self.x_coords, self.y_coords, self.container['symbols'] = annotations_to_hanan_grid(self.container['symbols'], self.container['scale'], threshold=1000)
         
         self.room_polygons = []
         self.current_polygon = []
@@ -95,10 +95,16 @@ class RoomAnnotator(tk.Frame):
         if len(self.current_polygon) < 3:
             return
 
-        self.canvas.create_line(
-            self.current_polygon[-1][0], self.current_polygon[-1][1],
-            self.current_polygon[0][0], self.current_polygon[0][1],
-            fill="green", width=2
+        # Convert list of (x, y) to flat list of coords
+        flat_coords = [coord for point in self.current_polygon for coord in point]
+
+        # Draw filled polygon with light green fill (simulate transparency)
+        self.canvas.create_polygon(
+            flat_coords,
+            fill="",  # light green with low opacity hex (simulated)
+            outline="green",
+            width=2,
+            tags="room_polygon"
         )
 
         room_name = simpledialog.askstring("Room Name", "Enter name for this room:", parent=self)

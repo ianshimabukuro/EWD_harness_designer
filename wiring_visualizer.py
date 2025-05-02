@@ -50,7 +50,7 @@ class WiringVisualizer(tk.Frame):
         button_frame = tk.Frame(self)
         button_frame.pack(fill="x", pady=10)
         #tk.Button(button_frame, text="Export Image", command=self.export_canvas_as_image).pack(side="left", padx=10)
-        #tk.Button(button_frame, text="Export BOM", command=self.export_bom_latex).pack(side="left", padx=10)
+        tk.Button(button_frame, text="Export BOM", command=self.export_bom_latex).pack(side="left", padx=10)
         tk.Button(button_frame, text="Export Manufacturing Instructions", command=self.export_manufacturing_instructions_latex).pack(side="left", padx=10)
 
 
@@ -69,7 +69,6 @@ class WiringVisualizer(tk.Frame):
                 case _:
                     self.canvas.create_oval(s.coords[0]-3, s.coords[1]-3, s.coords[0]+3, s.coords[1]+3, fill="red")
     def calculate_cost(self):
-
         wire_totals = defaultdict(float)
         breaker_count = 0
         junction_box_counts = 0
@@ -77,15 +76,12 @@ class WiringVisualizer(tk.Frame):
         # === Count wire lengths and connections
         for room, device_path_list in self.paths_by_room.items():
             for device_path in device_path_list:
-                for device, (path, length, gauge) in device_path.items():
-                    wire_totals[gauge] += length
+                for device, wire in device_path.items():
+                    wire_totals[wire.gauge] += wire.length
                     if device.type == "junction box":
                         junction_box_counts += 1
             if room != "panel_connections":
                 breaker_count += 1
-
-
-        # === Estimate junction box pricing by # of connections
 
         # === Prepare table rows
         table_rows = []
@@ -100,8 +96,8 @@ class WiringVisualizer(tk.Frame):
 
         # Junction Boxes
         jb_unit_cost = 5.00
-        jb_total = junction_box_counts*jb_unit_cost
-        grand_total +=jb_total
+        jb_total = junction_box_counts * jb_unit_cost
+        grand_total += jb_total
         table_rows.append((0, "Junction Box", junction_box_counts, jb_unit_cost, jb_total))
 
         # Breakers
@@ -110,16 +106,18 @@ class WiringVisualizer(tk.Frame):
         grand_total += breaker_total
         table_rows.append((0, "20A Breaker GFCI/AFCI", breaker_count, breaker_unit_cost, breaker_total))
 
-        #Panel
+        # Electrical Panel
         if self.panel_max_amp <= 150:
             panel_cost = 100
-            table_rows.append((0, "100-150A Electrical Panel", 1, panel_cost, panel_cost))
+            panel_label = "100-150A Electrical Panel"
         else:
             panel_cost = 200
-            table_rows.append((0, "200A Electrical Panel", 1, panel_cost, panel_cost))
+            panel_label = "200A Electrical Panel"
+        table_rows.append((0, panel_label, 1, panel_cost, panel_cost))
         grand_total += panel_cost
 
         return grand_total, table_rows
+
 
     def create_wiring(self):
 
@@ -147,10 +145,10 @@ class WiringVisualizer(tk.Frame):
 
                 # --- Switch Case: Add wires from light → switch, then switch → junction ---
                 if device.type == "switch":
+                    switch_node = (int(device.coords[0]), int(device.coords[1]))
                     for light in device.controls:
                         try:
                             light_node = (int(light.coords[0]), int(light.coords[1]))
-                            switch_node = (int(device.coords[0]), int(device.coords[1]))
                             light_path = nx.shortest_path(self.container['graph'], source=light_node, target=switch_node)
                             room_paths.append({light: Wire(light_path, light, device, self.container['scale'])})
                             total_amp += light.amperage

@@ -2,7 +2,9 @@ import tkinter as tk
 from tkinter import simpledialog, messagebox, filedialog
 from PIL import Image, ImageTk
 from classes.symbol import Symbol
-
+import json
+import os
+from datetime import datetime
 class SymbolAnnotator(tk.Frame):
     """
     A GUI for placing and editing electrical symbols on an image, with
@@ -62,26 +64,71 @@ class SymbolAnnotator(tk.Frame):
 
         self.update_status()
         self.update_annotation_list()
+    
 
     def load_image(self):
-        path = self.container.get("image_path")
-        if not path:
-            path = filedialog.askopenfilename()
-            self.container["image_path"] = path
+        path = filedialog.askopenfilename(title="Select floor plan image")
         if not path:
             return
+        self.container["image_path"] = path
         img = Image.open(path)
         self.img_tk = ImageTk.PhotoImage(img)
-        # Draw background with its own tag
+
         if self.img_id:
             self.canvas.delete(self.img_id)
         self.img_id = self.canvas.create_image(0, 0, anchor="nw",
-                                               image=self.img_tk,
-                                               tags=("background",))
+                                            image=self.img_tk,
+                                            tags=("background",))
         self.canvas.config(scrollregion=(0, 0,
-                                         self.img_tk.width(),
-                                         self.img_tk.height()))
+                                        self.img_tk.width(),
+                                        self.img_tk.height()))
+
+        # === Ask if user wants to resume ===
+        if messagebox.askyesno("Continue?", "Load previous annotations?"):
+            json_path = filedialog.askopenfilename(
+                title="Select annotation JSON",
+                filetypes=[("JSON Files", "*.json")]
+            )
+            if json_path:
+                try:
+                    with open(json_path, "r") as f:
+                        raw = json.load(f)
+
+                    self.container["symbols"].clear()
+                    # First pass: load all symbols
+                    symbols_raw = raw.get("symbols", [])
+                    symbols = [Symbol.from_dict(entry) for entry in symbols_raw]
+                    self.container["symbols"].clear()
+                    self.container["symbols"].extend(symbols)
+
+                    # Second pass: link switch.controls
+                    id_map = {s.id: s for s in symbols}
+                    for entry in symbols_raw:
+                        if entry["type"] == "switch":
+                            switch = id_map[entry["id"]]
+                            control_ids = entry.get("controls", [])
+                            switch.controls = [id_map[cid] for cid in control_ids if cid in id_map]
+
+                    # Draw symbols on canvas
+                    for sym in self.container["symbols"]:
+                        self.draw_symbol(sym)
+
+                    self.container["scale"] = raw.get("scale", None)
+                    self.scale_set = self.container["scale"] is not None
+
+                    if not self.scale_set:
+                        messagebox.showinfo("Info", "No scale info found in annotation. Please set scale.")
+                        self.begin_scale_collection()
+
+                    self.update_annotation_list()
+                    print(f"✅ Loaded {len(self.container['symbols'])} annotations.")
+                    return
+                except Exception as e:
+                    messagebox.showerror("Error", f"Failed to load annotations: {e}")
+
         self.begin_scale_collection()
+
+
 
     def begin_scale_collection(self):
         self.scale_points.clear()
@@ -322,6 +369,20 @@ class SymbolAnnotator(tk.Frame):
         else:
             self.status_var.set("No active switch to finish.")
 
+    def save_annotations_to_json(self, path="annotations.json"):
+        os.makedirs("output", exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"annotations_{timestamp}.json"
+        path = os.path.join("output", filename)
+        data = {
+            "scale": self.container.get("scale", 1.0),  # default to 1.0 if not set
+            "symbols": [s.to_dict() for s in self.container["symbols"]]
+        }
+        with open(path, "w") as f:
+            json.dump(data, f, indent=2)
+        print(f"✅ Annotations saved to {os.path.abspath(path)}")
+
     def finish(self):
+        self.save_annotations_to_json()
         self.pack_forget()
         self.on_done(self.container)
