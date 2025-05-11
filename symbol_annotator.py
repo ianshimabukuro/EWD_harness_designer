@@ -5,6 +5,7 @@ from classes.symbol import Symbol
 import json
 import os
 from datetime import datetime
+import re
 class SymbolAnnotator(tk.Frame):
     """
     A GUI for placing and editing electrical symbols on an image, with
@@ -68,9 +69,12 @@ class SymbolAnnotator(tk.Frame):
 
     def load_image(self):
         path = filedialog.askopenfilename(title="Select floor plan image")
+            # Safely extract base image name without extension
+
         if not path:
             return
         self.container["image_path"] = path
+        self.container["image_name"] = os.path.basename(path).split('.')[0]
         img = Image.open(path)
         self.img_tk = ImageTk.PhotoImage(img)
 
@@ -372,7 +376,7 @@ class SymbolAnnotator(tk.Frame):
     def save_annotations_to_json(self, path="annotations.json"):
         os.makedirs("output", exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"annotations_{timestamp}.json"
+        filename = f"annotations_{str(self.container["image_name"])}_{timestamp}.json"
         path = os.path.join("output", filename)
         data = {
             "scale": self.container.get("scale", 1.0),  # default to 1.0 if not set
