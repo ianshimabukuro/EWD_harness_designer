@@ -17,6 +17,7 @@ def main():
         'default': DEFAULTS,
         'symbols': [],
         'image_path': None,
+        'image_name': None,
         'symbol_types' : SYMBOL_TYPES,
         'unit_prices': UNIT_PRICES
     }
