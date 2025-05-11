@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import simpledialog
+from tkinter import simpledialog, messagebox
 from PIL import Image, ImageTk
 from matplotlib.path import Path
 from utils.hanan_utils import annotations_to_hanan_grid
@@ -97,30 +97,40 @@ class RoomAnnotator(tk.Frame):
 
         # Convert list of (x, y) to flat list of coords
         flat_coords = [coord for point in self.current_polygon for coord in point]
-
-        # Draw filled polygon with light green fill (simulate transparency)
-        self.canvas.create_polygon(
-            flat_coords,
-            fill="",  # light green with low opacity hex (simulated)
-            outline="green",
-            width=2,
-            tags="room_polygon"
-        )
-
         room_name = simpledialog.askstring("Room Name", "Enter name for this room:", parent=self)
         if not room_name:
             return
 
-        self.room_polygons.append((self.current_polygon[:], room_name))
-        self.assign_room_to_dots(self.current_polygon, room_name)
+        # Check if current polygon is valid (one JB only)
 
-        cx = sum(x for x, y in self.current_polygon) // len(self.current_polygon)
-        cy = sum(y for x, y in self.current_polygon) // len(self.current_polygon)
-        self.canvas.create_text(cx, cy, text=room_name, fill="black", font=("Arial", 10, "bold"))
+        isValid = self.valid_polygon()
+        print(isValid)
+        if isValid:
+            self.room_polygons.append((self.current_polygon[:], room_name))
+            self.assign_room_to_dots(self.current_polygon, room_name)
 
-        self.current_polygon.clear()
-        self.canvas.delete("preview")
-        self.update_roomless_count()
+            cx = sum(x for x, y in self.current_polygon) // len(self.current_polygon)
+            cy = sum(y for x, y in self.current_polygon) // len(self.current_polygon)
+            self.canvas.create_text(cx, cy, text=room_name, fill="black", font=("Arial", 10, "bold"))
+
+            self.current_polygon.clear()
+            self.canvas.delete("preview")
+            self.update_roomless_count()
+                    # Draw filled polygon with light green fill (simulate transparency)
+            self.canvas.create_polygon(
+                flat_coords,
+                fill="",  # light green with low opacity hex (simulated)
+                outline="green",
+                width=2,
+                tags="room_polygon"
+            )
+        else:
+            self.current_polygon.clear()
+            self.canvas.delete("preview")
+            messagebox.showerror(title="JB Error", message= "0 or more than 1 junction boxes inside one room")
+            return
+
+
     def done(self):
         self.pack_forget() 
         self.on_done(self.container)
@@ -138,4 +148,20 @@ class RoomAnnotator(tk.Frame):
             mapped = (int(symbol.coords[0]), int(symbol.coords[1]))
             if symbol.type != "electrical panel" and mapped in self.dot_room_map and symbol.room is None:
                 symbol.room = self.dot_room_map[mapped]
+    
+    def valid_polygon(self):
+        poly_path = Path(self.current_polygon)
+        count = 0
+
+        for symbol in self.container["symbols"]:
+            if symbol.type == 'junction box':
+                if poly_path.contains_point((symbol.coords[0],symbol.coords[1]),radius = 1e-6):
+                    count+=1
+                    if count > 1:
+                        return False
+
+        return count == 1
+
+                        
+        
 
