@@ -27,7 +27,7 @@ class SymbolAnnotator(tk.Frame):
         self.active_switch = None
 
         # Load YOLOv8 model ONCE at startup
-        self.yolo_model = YOLO("best.pt")
+        self.yolo_model = YOLO("yolo8n_weight.pt")
 
         # --- Top controls ---
         ctrl = tk.Frame(self)
