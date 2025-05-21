@@ -6,6 +6,8 @@ import json
 import os
 from datetime import datetime
 import re
+from ultralytics import YOLO
+
 class SymbolAnnotator(tk.Frame):
     """
     A GUI for placing and editing electrical symbols on an image, with
@@ -24,6 +26,9 @@ class SymbolAnnotator(tk.Frame):
         self.scale_point_ids = []
         self.active_switch = None
 
+        # Load YOLOv8 model ONCE at startup
+        self.yolo_model = YOLO("best.pt")
+
         # --- Top controls ---
         ctrl = tk.Frame(self)
         ctrl.pack(fill="x", pady=5)
@@ -31,7 +36,12 @@ class SymbolAnnotator(tk.Frame):
         tk.Button(ctrl, text="Done", command=self.finish).pack(side="left", padx=5)
         tk.Button(ctrl, text="Finish Light Selection", command=self.finish_light_selection).pack(side="left", padx=5)
         self.selected_symbol = tk.StringVar(value=self.symbol_types[0])
-        tk.OptionMenu(ctrl, self.selected_symbol, *self.symbol_types, command=self.update_status).pack(side="left", padx=5)
+        tk.OptionMenu(
+            ctrl,
+            self.selected_symbol,
+            *self.symbol_types,
+            command=lambda *_: (self.update_status(), self.update_annotation_list())
+        ).pack(side="left", padx=5)
         self.status_var = tk.StringVar()
         tk.Label(self, textvariable=self.status_var).pack(fill="x")
 
@@ -62,7 +72,7 @@ class SymbolAnnotator(tk.Frame):
         self.img_id = None
         self.scale_points = []
         self.scale_set = False
-
+        
         self.update_status()
         self.update_annotation_list()
     
@@ -129,7 +139,29 @@ class SymbolAnnotator(tk.Frame):
                     return
                 except Exception as e:
                     messagebox.showerror("Error", f"Failed to load annotations: {e}")
-
+        else:
+            YOLO_CLASS_MAP = {
+                0: "light",
+                1: "outlet",
+                2: "panel",
+                3: "switch"
+            }
+            results = self.yolo_model(self.container["image_path"])[0]
+            self.container["symbols"].clear()
+            for box in results.boxes:
+                cls_idx = int(box.cls[0])
+                symbol_type = YOLO_CLASS_MAP.get(cls_idx, "unknown")
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
+                x_center = (x1 + x2) / 2
+                y_center = (y1 + y2) / 2
+                defs = self.defaults.get(symbol_type, {})
+                sym = Symbol(symbol_type, (x_center, y_center), room=None,
+                             amperage=defs.get("amperage"),
+                             height=defs.get("height"))
+                self.container["symbols"].append(sym)
+                self.draw_symbol(sym)
+            self.update_annotation_list()
+            print(f"✅ Detected {len(self.container['symbols'])} symbols from YOLOv8.")
         self.begin_scale_collection()
 
 
@@ -230,20 +262,31 @@ class SymbolAnnotator(tk.Frame):
         tag = ("symbol", f"id_{symbol.id}")
         t = symbol.type.lower()
         if t == 'outlet':
-            self.canvas.create_oval(x-3, y-3, x+3, y+3,
-                                    fill="red", tags=tag)
+            # Red rectangle with a dot
+            self.canvas.create_rectangle(x-6, y-4, x+6, y+4, fill="red", tags=tag)
+            self.canvas.create_oval(x-2, y-2, x+2, y+2, fill="white", outline="", tags=tag)
         elif t == 'switch':
-            self.canvas.create_oval(x-3, y-3, x+3, y+3,
-                                    fill="red", tags=tag)
+            # Green triangle
+            self.canvas.create_polygon(
+                x, y-6, x-6, y+6, x+6, y+6,
+                fill="green", outline="black", tags=tag
+            )
         elif t == 'light':
-            self.canvas.create_oval(x-3, y-3, x+3, y+3,
-                                    fill="yellow", tags=tag)
+            # Yellow circle with a star (asterisk)
+            self.canvas.create_oval(x-7, y-7, x+7, y+7, fill="yellow", outline="orange", tags=tag)
+            self.canvas.create_text(x, y, text="*", fill="orange", font=("Arial", 10, "bold"), tags=tag)
+        elif t == 'panel':
+            # Blue rectangle with thick border
+            self.canvas.create_rectangle(x-8, y-12, x+8, y+12, fill="blue", outline="black", width=2, tags=tag)
         elif t == 'junction box':
-            self.canvas.create_rectangle(x-8, y-8, x+8, y+8,
-                                         fill="red", tags=tag)
-        elif t == 'electrical panel':
-            self.canvas.create_rectangle(x-5, y-15, x+5, y+15,
-                                         fill="black", tags=tag)
+            # Gray diamond
+            self.canvas.create_polygon(
+                x, y-8, x+8, y, x, y+8, x-8, y,
+                fill="gray", outline="black", tags=tag
+            )
+        else:
+            # Default: small black circle
+            self.canvas.create_oval(x-3, y-3, x+3, y+3, fill="black", tags=tag)
 
     def update_annotation_list(self):
         self.annotation_listbox.delete(0, tk.END)
@@ -289,6 +332,33 @@ class SymbolAnnotator(tk.Frame):
             tk.Entry(dlg, textvariable=hgt_var).grid(row=row, column=1, padx=5)
             row += 1
 
+        # --- Controls selection for switches ---
+        controls_listbox = None
+        if sym.type.lower() == "switch":
+            tk.Label(dlg, text="Controls lights:").grid(row=row, column=0, sticky="e", padx=5)
+            controls_listbox = tk.Listbox(dlg, selectmode="multiple", height=5)
+            # List all lights
+            light_syms = [s for s in self.container["symbols"] if s.type.lower() == "light"]
+            for idx, l in enumerate(light_syms):
+                controls_listbox.insert(tk.END, f"ID:{l.id} at ({int(l.coords[0])},{int(l.coords[1])})")
+                if l in sym.controls:
+                    controls_listbox.selection_set(idx)
+            controls_listbox.grid(row=row, column=1, padx=5)
+            row += 1
+
+        # --- Controlled by selection for lights ---
+        controlled_by_listbox = None
+        if sym.type.lower() == "light":
+            tk.Label(dlg, text="Controlled by switch:").grid(row=row, column=0, sticky="e", padx=5)
+            controlled_by_listbox = tk.Listbox(dlg, selectmode="single", height=5)
+            switch_syms = [s for s in self.container["symbols"] if s.type.lower() == "switch"]
+            for idx, s in enumerate(switch_syms):
+                controlled_by_listbox.insert(tk.END, f"ID:{s.id} at ({int(s.coords[0])},{int(s.coords[1])})")
+                if hasattr(s, "controls") and sym in s.controls:
+                    controlled_by_listbox.selection_set(idx)
+            controlled_by_listbox.grid(row=row, column=1, padx=5)
+            row += 1
+
         def save():
             try:
                 newx = float(xvar.get()); newy = float(yvar.get())
@@ -308,6 +378,20 @@ class SymbolAnnotator(tk.Frame):
                 except ValueError:
                     messagebox.showerror("Invalid input", "Height must be integer.")
                     return
+            # Save controls for switch
+            if controls_listbox:
+                selected = controls_listbox.curselection()
+                sym.controls = [light_syms[i] for i in selected]
+            # Save controlled by for light
+            if controlled_by_listbox:
+                selected = controlled_by_listbox.curselection()
+                if selected:
+                    # Remove this light from all switches' controls first
+                    for s in switch_syms:
+                        if hasattr(s, "controls") and sym in s.controls:
+                            s.controls.remove(sym)
+                    # Add to selected switch
+                    switch_syms[selected[0]].controls.append(sym)
             self.refresh_canvas()
             self.update_annotation_list()
             dlg.destroy()
@@ -350,20 +434,31 @@ class SymbolAnnotator(tk.Frame):
             tag = ("symbol", f"id_{sym.id}")
             t = sym.type.lower()
             if t == 'outlet':
-                self.canvas.create_oval(x-3, y-3, x+3, y+3,
-                                        fill="red", tags=tag)
+                # Red rectangle with a dot
+                self.canvas.create_rectangle(x-6, y-4, x+6, y+4, fill="red", tags=tag)
+                self.canvas.create_oval(x-2, y-2, x+2, y+2, fill="white", outline="", tags=tag)
             elif t == 'switch':
-                self.canvas.create_oval(x-3, y-3, x+3, y+3,
-                                        fill="red", tags=tag)
+                # Green triangle
+                self.canvas.create_polygon(
+                    x, y-6, x-6, y+6, x+6, y+6,
+                    fill="green", outline="black", tags=tag
+                )
             elif t == 'light':
-                self.canvas.create_oval(x-3, y-3, x+3, y+3,
-                                        fill="yellow", tags=tag)
+                # Yellow circle with a star (asterisk)
+                self.canvas.create_oval(x-7, y-7, x+7, y+7, fill="yellow", outline="orange", tags=tag)
+                self.canvas.create_text(x, y, text="*", fill="orange", font=("Arial", 10, "bold"), tags=tag)
+            elif t == 'panel':
+                # Blue rectangle with thick border
+                self.canvas.create_rectangle(x-8, y-12, x+8, y+12, fill="blue", outline="black", width=2, tags=tag)
             elif t == 'junction box':
-                self.canvas.create_rectangle(x-8, y-8, x+8, y+8,
-                                             fill="red", tags=tag)
-            elif t == 'electrical panel':
-                self.canvas.create_rectangle(x-5, y-15, x+5, y+15,
-                                             fill="black", tags=tag)
+                # Gray diamond
+                self.canvas.create_polygon(
+                    x, y-8, x+8, y, x, y+8, x-8, y,
+                    fill="gray", outline="black", tags=tag
+                )
+            else:
+                # Default: small black circle
+                self.canvas.create_oval(x-3, y-3, x+3, y+3, fill="black", tags=tag)
 
     def finish_light_selection(self):
         if self.active_switch:
