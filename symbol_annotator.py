@@ -143,7 +143,7 @@ class SymbolAnnotator(tk.Frame):
             YOLO_CLASS_MAP = {
                 0: "light",
                 1: "outlet",
-                2: "panel",
+                2: "electrical panel",
                 3: "switch"
             }
             results = self.yolo_model(self.container["image_path"])[0]
@@ -262,30 +262,28 @@ class SymbolAnnotator(tk.Frame):
         tag = ("symbol", f"id_{symbol.id}")
         t = symbol.type.lower()
         if t == 'outlet':
-            # Red rectangle with a dot
             self.canvas.create_rectangle(x-6, y-4, x+6, y+4, fill="red", tags=tag)
             self.canvas.create_oval(x-2, y-2, x+2, y+2, fill="white", outline="", tags=tag)
         elif t == 'switch':
-            # Green triangle
             self.canvas.create_polygon(
                 x, y-6, x-6, y+6, x+6, y+6,
                 fill="green", outline="black", tags=tag
             )
+            # Add label next to switch
+            self.canvas.create_text(x+15, y, text=f"S{symbol.id}", fill="black", font=("Arial", 8), tags=tag)
         elif t == 'light':
-            # Yellow circle with a star (asterisk)
             self.canvas.create_oval(x-7, y-7, x+7, y+7, fill="yellow", outline="orange", tags=tag)
             self.canvas.create_text(x, y, text="*", fill="orange", font=("Arial", 10, "bold"), tags=tag)
-        elif t == 'panel':
-            # Blue rectangle with thick border
+            # Add label next to light
+            self.canvas.create_text(x+15, y, text=f"L{symbol.id}", fill="black", font=("Arial", 8), tags=tag)
+        elif t == 'electrical panel':
             self.canvas.create_rectangle(x-8, y-12, x+8, y+12, fill="blue", outline="black", width=2, tags=tag)
         elif t == 'junction box':
-            # Gray diamond
             self.canvas.create_polygon(
                 x, y-8, x+8, y, x, y+8, x-8, y,
                 fill="gray", outline="black", tags=tag
             )
         else:
-            # Default: small black circle
             self.canvas.create_oval(x-3, y-3, x+3, y+3, fill="black", tags=tag)
 
     def update_annotation_list(self):
@@ -428,36 +426,34 @@ class SymbolAnnotator(tk.Frame):
                 for lt in sym.controls:
                     lx, ly = lt.coords
                     self.canvas.create_line(sx, sy, lx, ly,
-                                            fill="blue", dash=(2,2),
-                                            tags=("connection",))
+                                        fill="blue", dash=(2,2),
+                                        tags=("connection",))
             x, y = sym.coords
             tag = ("symbol", f"id_{sym.id}")
             t = sym.type.lower()
             if t == 'outlet':
-                # Red rectangle with a dot
                 self.canvas.create_rectangle(x-6, y-4, x+6, y+4, fill="red", tags=tag)
                 self.canvas.create_oval(x-2, y-2, x+2, y+2, fill="white", outline="", tags=tag)
             elif t == 'switch':
-                # Green triangle
                 self.canvas.create_polygon(
                     x, y-6, x-6, y+6, x+6, y+6,
                     fill="green", outline="black", tags=tag
                 )
+                # Add label next to switch
+                self.canvas.create_text(x+15, y, text=f"S{sym.id}", fill="black", font=("Arial", 8), tags=tag)
             elif t == 'light':
-                # Yellow circle with a star (asterisk)
                 self.canvas.create_oval(x-7, y-7, x+7, y+7, fill="yellow", outline="orange", tags=tag)
                 self.canvas.create_text(x, y, text="*", fill="orange", font=("Arial", 10, "bold"), tags=tag)
-            elif t == 'panel':
-                # Blue rectangle with thick border
+                # Add label next to light
+                self.canvas.create_text(x+15, y, text=f"L{sym.id}", fill="black", font=("Arial", 8), tags=tag)
+            elif t == 'electrical panel':
                 self.canvas.create_rectangle(x-8, y-12, x+8, y+12, fill="blue", outline="black", width=2, tags=tag)
             elif t == 'junction box':
-                # Gray diamond
                 self.canvas.create_polygon(
                     x, y-8, x+8, y, x, y+8, x-8, y,
                     fill="gray", outline="black", tags=tag
                 )
             else:
-                # Default: small black circle
                 self.canvas.create_oval(x-3, y-3, x+3, y+3, fill="black", tags=tag)
 
     def finish_light_selection(self):
@@ -480,8 +476,20 @@ class SymbolAnnotator(tk.Frame):
         with open(path, "w") as f:
             json.dump(data, f, indent=2)
         print(f"✅ Annotations saved to {os.path.abspath(path)}")
+    
+    def validate_annotations(self):
+        errors = []
+        # Rule: Only one electrical panel
+        panels = [s for s in self.container["symbols"] if s.type.lower() == "electrical panel"]
+        if len(panels) != 1:
+            errors.append(f"There must be exactly ONE electrical panel. There are {len(panels)} ")
+        return errors
 
     def finish(self):
+        errors = self.validate_annotations()
+        if errors:
+            messagebox.showerror("Annotation Check Failed", "\n".join(errors))
+            return
         self.save_annotations_to_json()
         self.pack_forget()
         self.on_done(self.container)
