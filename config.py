@@ -6,8 +6,8 @@ DEFAULTS = {
     'outlet': {'amperage': 15, 'height': CEILING_HEIGHT - 1},
     'switch': {'amperage': 15, 'height': CEILING_HEIGHT - 4},
     'light': {'amperage': 1, 'height': CEILING_HEIGHT},
-    'junction box': {'amperage': None, 'height': CEILING_HEIGHT},
-    'electrical panel': {'amperage': None, 'height': 6}
+    'junction box': {'amperage': 0, 'height': CEILING_HEIGHT},
+    'electrical panel': {'amperage': 0, 'height': 6}
 }
 
 UNIT_PRICES = {
