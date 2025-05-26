@@ -68,6 +68,8 @@ class WiringVisualizer(tk.Frame):
                     self.canvas.create_rectangle(s.coords[0]-5, s.coords[1]-15, s.coords[0]+5, s.coords[1]+15, fill="black")
                 case _:
                     self.canvas.create_oval(s.coords[0]-3, s.coords[1]-3, s.coords[0]+3, s.coords[1]+3, fill="red")
+    
+    
     def calculate_cost(self):
         wire_totals = defaultdict(float)
         breaker_count = 0
@@ -287,14 +289,12 @@ class WiringVisualizer(tk.Frame):
                 os.remove(ps_filename)
 
     def export_bom_latex(self, filename="bill_of_materials.tex"):
+        from collections import defaultdict
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"bill_of_materials_{timestamp}.tex"
         output = os.path.join(self.output_path, filename)
 
-        
-        grand_total, table_rows = self.calculate_cost()
-        # === Create LaTeX content
         lines = [
             r"\documentclass{article}",
             r"\usepackage{booktabs}",
@@ -307,27 +307,83 @@ class WiringVisualizer(tk.Frame):
             r"{\LARGE \textbf{Bill of Materials Summary}}\\[0.5em]",
             r"\end{center}",
             r"\vspace{1.5em}",
-            r"\section*{Component Summary}",
-            r"\begin{tabular}{lllll}",
-            r"\toprule",
-            r"\textbf{BoM Level} & \textbf{Material} & \textbf{Quantity} & \textbf{Unit Cost (\$)} & \textbf{Total Cost (\$)} \\",
-            r"\midrule"
         ]
 
-        for level, name, qty, unit, total in table_rows:
-            lines.append(f"{level} & {name} & {qty} & {unit:.2f} & {total:.2f} \\\\")
+        grand_total = 0.0
 
+        for room, device_path_list in self.paths_by_room.items():
+            if room == "panel_connections":
+                continue  # We'll handle home runs separately
+
+            # --- Gather all wires for this room ---
+            wire_totals = defaultdict(float)
+            junction_box_counts = 0
+            breaker_count = 0
+
+            # In-room wires
+            for device_path in device_path_list:
+                for device, wire in device_path.items():
+                    wire_totals[wire.gauge] += wire.length
+                    if device.type == "junction box":
+                        junction_box_counts += 1
+                breaker_count += 1
+
+            # Home run wires for this room
+            for device_path in self.paths_by_room.get("panel_connections", []):
+                for device, wire in device_path.items():
+                    if getattr(wire.start_symbol, "room", None) == room:
+                        wire_totals[wire.gauge] += wire.length
+
+            table_rows = []
+            room_total = 0.0
+
+            # Wires
+            for gauge, total_len in wire_totals.items():
+                unit_price = self.container['unit_prices'].get(gauge, 0.00)
+                cost = round(total_len * unit_price, 2)
+                room_total += cost
+                table_rows.append((1, f"{gauge} wire", round(total_len, 2), unit_price, cost))
+
+            # Junction Boxes
+            jb_unit_cost = 5.00
+            jb_total = junction_box_counts * jb_unit_cost
+            room_total += jb_total
+            table_rows.append((0, "Junction Box", junction_box_counts, jb_unit_cost, jb_total))
+
+            grand_total += room_total
+
+            # --- Write LaTeX for this room ---
+            lines.extend([
+                rf"\section*{{Room: {room}}}",
+                r"\begin{tabular}{lllll}",
+                r"\toprule",
+                r"\textbf{Material} & \textbf{Quantity} & \textbf{Units} & \textbf{Unit Cost (\$)} & \textbf{Total Cost (\$)} \\",
+                r"\midrule"
+            ])
+            for level, name, qty, unit, total in table_rows:
+                # Determine units
+                if "wire" in name.lower():
+                    units = "ft"
+                else:
+                    units = "count"
+                lines.append(f"{name} & {qty} & {units} & {unit:.2f} & {total:.2f} \\\\")
+            lines.extend([
+                r"\bottomrule",
+                r"\end{tabular}",
+                rf"\textbf{{Room Total: \${room_total:.2f}}}",
+                r"\vspace{1em}",
+            ])
+
+        # Add grand total at the end
         lines.extend([
-            r"\bottomrule",
-            r"\end{tabular}",
-            "",
-            rf"\section*{{Total Cost: \${grand_total:.2f}}}",
+            r"\section*{Grand Total}",
+            rf"\textbf{{Total Cost: \${grand_total:.2f}}}",
             r"\end{document}"
         ])
 
         with open(output, "w") as f:
             f.write("\n".join(lines))
-        print(f"LaTeX BoM with costs exported to: {os.path.abspath(output)}")
+        print(f"LaTeX BoM (room by room) exported to: {os.path.abspath(output)}")
 
     def export_manufacturing_instructions_latex(self, filename="manufacturing_instructions.tex"):
         #Handle output path and file name
