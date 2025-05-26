@@ -36,7 +36,7 @@ class RoomAnnotator(tk.Frame):
         self.img_tk = ImageTk.PhotoImage(self.image)
         self.canvas.create_image(0, 0, anchor="nw", image=self.img_tk)
 
-        self.container['graph'], self.x_coords, self.y_coords, self.container['symbols'] = annotations_to_hanan_grid(self.container['symbols'], self.container['scale'], threshold=1000)
+        self.container['graph'], self.x_coords, self.y_coords, self.container['symbols'] = annotations_to_hanan_grid(self.container['symbols'], self.container['scale'], threshold=100)
         
         self.room_polygons = []
         self.current_polygon = []
