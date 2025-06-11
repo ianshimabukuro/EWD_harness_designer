@@ -49,7 +49,7 @@ class WiringVisualizer(tk.Frame):
         #Export Buttons
         button_frame = tk.Frame(self)
         button_frame.pack(fill="x", pady=10)
-        #tk.Button(button_frame, text="Export Image", command=self.export_canvas_as_image).pack(side="left", padx=10)
+        tk.Button(button_frame, text="Export Image", command=self.export_canvas_as_image).pack(side="left", padx=10)
         tk.Button(button_frame, text="Export BOM", command=self.export_bom_latex).pack(side="left", padx=10)
         tk.Button(button_frame, text="Export Manufacturing Instructions", command=self.export_manufacturing_instructions_latex).pack(side="left", padx=10)
 
@@ -204,30 +204,38 @@ class WiringVisualizer(tk.Frame):
         self.draw_paths(paths_by_room)
 
     def draw_paths(self, paths_by_room):
+        # Define a mapping from gauge to width (lower gauge = thicker)
+        def gauge_to_width(gauge):
+            try:
+                g = int(str(gauge).replace("AWG", "").strip())
+                # Inverse relationship: lower gauge = thicker
+                return max(2, 12 - g // 2)
+            except Exception:
+                return 2  # fallback
+
         for room, device_path_list in paths_by_room.items():
             for device_path in device_path_list:
                 for device, wire in device_path.items():
                     path = wire.path
-                    x1, y1 = path[0]
-                    x2, y2 = path[-1]
 
                     # === Determine wire category and styling
                     if wire.start_symbol.type == "light" and wire.end_symbol.type == "switch":
                         color = "blue"
                         style = (2, 4)  # dashed
-                        width = 2
+                        width = gauge_to_width(wire.gauge)
                     elif wire.start_symbol.type == "switch" and wire.end_symbol.type == "junction box":
                         color = "orange"
                         style = (2, 2)
-                        width = 2
+                        width = gauge_to_width(wire.gauge)
                     elif wire.start_symbol.type == "junction box" and wire.end_symbol.type == "electrical panel":
                         color = "black"
                         style = None
-                        width = 3
+                        # Home run wires: make much thicker
+                        width = max(8, gauge_to_width(wire.gauge) * 2)
                     else:
                         color = "red"
                         style = None
-                        width = 2
+                        width = gauge_to_width(wire.gauge)
 
                     # === Draw the line path
                     for i in range(len(path) - 1):
