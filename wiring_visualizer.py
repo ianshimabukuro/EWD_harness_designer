@@ -213,12 +213,14 @@ class WiringVisualizer(tk.Frame):
             except Exception:
                 return 2  # fallback
 
+        # --- Collect all wires with their drawing info ---
+        wires_to_draw = []
         for room, device_path_list in paths_by_room.items():
             for device_path in device_path_list:
                 for device, wire in device_path.items():
                     path = wire.path
 
-                    # === Determine wire category and styling
+                    # Determine wire category and styling
                     if wire.start_symbol.type == "light" and wire.end_symbol.type == "switch":
                         color = "blue"
                         style = (2, 4)  # dashed
@@ -230,32 +232,38 @@ class WiringVisualizer(tk.Frame):
                     elif wire.start_symbol.type == "junction box" and wire.end_symbol.type == "electrical panel":
                         color = "black"
                         style = None
-                        # Home run wires: make much thicker
                         width = max(8, gauge_to_width(wire.gauge) * 2)
                     else:
                         color = "red"
                         style = None
                         width = gauge_to_width(wire.gauge)
 
-                    # === Draw the line path
-                    for i in range(len(path) - 1):
-                        x1, y1 = path[i]
-                        x2, y2 = path[i + 1]
-                        if style:
-                            self.canvas.create_line(x1, y1, x2, y2, fill=color, width=width, dash=style)
-                        else:
-                            self.canvas.create_line(x1, y1, x2, y2, fill=color, width=width)
+                    wires_to_draw.append({
+                        "path": path,
+                        "color": color,
+                        "style": style,
+                        "width": width,
+                        "wire": wire
+                    })
 
-                    # === Midpoint label
-                    if path:
-                        mid_index = len(path) // 2
-                        mx, my = path[mid_index]
-                        self.canvas.create_text(
-                            mx, my - 10,
-                            text=f"{wire.start_symbol.type} → {wire.end_symbol.type} ({wire.gauge})",
-                            fill=color,
-                            font=("Arial", 7)
-                        )
+        # --- Sort wires by width (thickest first) ---
+        wires_to_draw.sort(key=lambda w: -w["width"])
+
+        # --- Draw wires in sorted order ---
+        for w in wires_to_draw:
+            path = w["path"]
+            color = w["color"]
+            style = w["style"]
+            width = w["width"]
+            wire = w["wire"]
+
+            for i in range(len(path) - 1):
+                x1, y1 = path[i]
+                x2, y2 = path[i + 1]
+                if style:
+                    self.canvas.create_line(x1, y1, x2, y2, fill=color, width=width, dash=style)
+                else:
+                    self.canvas.create_line(x1, y1, x2, y2, fill=color, width=width)
 
         print(f"✅ Wiring paths drawn for rooms: {list(paths_by_room.keys())}")
 
@@ -328,12 +336,15 @@ class WiringVisualizer(tk.Frame):
             junction_box_counts = 0
             breaker_count = 0
 
+            # Count junction boxes by symbols, not by wires
+            junction_box_counts = sum(
+                1 for s in self.container['symbols']
+                if s.type == "junction box" and getattr(s, "room", None) == room
+            )
             # In-room wires
             for device_path in device_path_list:
                 for device, wire in device_path.items():
                     wire_totals[wire.gauge] += wire.length
-                    if device.type == "junction box":
-                        junction_box_counts += 1
                 breaker_count += 1
 
             # Home run wires for this room
